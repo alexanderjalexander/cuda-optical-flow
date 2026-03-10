@@ -1,0 +1,44 @@
+BasedOnStyle: LLVM
+ColumnLimit: 120
+TabWidth: 4
+IndentWidth: 4
+UseTab: false
+InsertBraces: true
+IndentCaseBlocks: false
+BreakBeforeBraces: Allman
+MaxEmptyLinesToKeep: 2
+IncludeBlocks: Regroup
+SortIncludes: CaseInsensitive
+IncludeCategories:
+  - Regex: '^<sys/'
+    Priority: 1
+    SortPriority: 1
+    CaseSensitive: false
+  - Regex: '^<(net|netinet|protocols)/'
+    Priority: 1
+    SortPriority: 2
+    CaseSensitive: false
+  - Regex: '^<'
+    Priority: 2
+    SortPriority: 3
+    CaseSensitive: false
+  - Regex: '^"'
+    Priority: 3
+    SortPriority: 4
+    CaseSensitive: false
+
+BitFieldColonSpacing: None
+SpaceAfterLogicalNot: false
+SpaceBeforeAssignmentOperators: true
+QualifierAlignment: Left
+PointerAlignment: Right
+AllowShortFunctionsOnASingleLine: None
+AlwaysBreakAfterDefinitionReturnType: All
+SeparateDefinitionBlocks: Always
+SpaceAfterCStyleCast: false
+AllowShortIfStatementsOnASingleLine: false
+AllowShortBlocksOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+AllowShortEnumsOnASingleLine: false
+AllowShortCaseLabelsOnASingleLine: false
+ContinuationIndentWidth: 4
