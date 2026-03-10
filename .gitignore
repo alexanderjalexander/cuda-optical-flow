@@ -1,3 +1,6 @@
+# Project-specific ignores
+optflow
+
 # CUDA .gitignore template
 *.i
 *.ii
