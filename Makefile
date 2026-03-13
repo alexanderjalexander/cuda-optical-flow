@@ -1,5 +1,8 @@
 CC = nvcc
-FLAGS = -arch=sm_75
+
+IFLAGS = -I/usr/include/opencv4 
+LDFLAGS = -L/usr/lib/x86_64-linux-gnu -lopencv_core -lopencv_highgui -lopencv_videoio -lopencv_imgcodecs -lopencv_imgproc 
+FLAGS = -arch=sm_75 -std=c++17 
 
 FORMATTER = clang-format
 FLOW_PROG = optflow
@@ -9,7 +12,7 @@ FLOW_FORMAT = ${FLOW_CLS}
 all: ${FLOW_PROG}
 
 ${FLOW_PROG}: ${FLOW_CLS}
-	${CC} ${FLAGS} ${FLOW_CLS} -o ${FLOW_PROG}
+	${CC} ${FLAGS} ${IFLAGS} ${LDFLAGS} ${FLOW_CLS} -o ${FLOW_PROG}
 
 clean:
 	rm ${FLOW_PROG}

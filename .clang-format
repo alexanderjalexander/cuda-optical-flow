@@ -10,6 +10,10 @@ MaxEmptyLinesToKeep: 2
 IncludeBlocks: Regroup
 SortIncludes: CaseInsensitive
 IncludeCategories:
+  - Regex: '^<opencv2/'
+    Priority: 1
+    SortPriority: 0
+    CaseSensitive: false
   - Regex: '^<sys/'
     Priority: 1
     SortPriority: 1
