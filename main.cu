@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
+
 #include "opencv2/videoio.hpp"
 
 __global__ void
@@ -55,15 +56,19 @@ main(int argc, char *argv[])
     cv::Mat frame;
     std::vector<cv::Mat> frames;
     frames.reserve(totalFrames > 0 ? totalFrames : 1000);
+
+    size_t totalBytes = 0;
     while (cap.read(frame))
     {
         frames.push_back(frame.clone());
+        totalBytes += frame.total() * frame.elemSize();
     }
     std::cout << "Buffered " << frames.size() << " frames." << std::endl;
+    std::cout << "Approx bytes in frame buffers: " << totalBytes << "\n";
 
     // Release the video capture object
     cap.release();
 
-    printf("Finished reading video & first frame!\n");
+    printf("Finished reading video!\n");
     return EXIT_SUCCESS;
 }
