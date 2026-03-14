@@ -7,6 +7,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 
+#include "opencv2/imgproc.hpp"
 #include "opencv2/videoio.hpp"
 
 __global__ void
@@ -53,15 +54,16 @@ main(int argc, char *argv[])
     }
 
     // CPU memory frame buffer
-    cv::Mat frame;
+    cv::Mat frame, gray;
     std::vector<cv::Mat> frames;
     frames.reserve(totalFrames > 0 ? totalFrames : 1000);
 
     size_t totalBytes = 0;
     while (cap.read(frame))
     {
-        frames.push_back(frame.clone());
-        totalBytes += frame.total() * frame.elemSize();
+        cv::cvtColor(frame, gray, cv::COLOR_BGR2GRAY);
+        frames.push_back(gray.clone());
+        totalBytes += gray.total() * gray.elemSize();
     }
     std::cout << "Buffered " << frames.size() << " frames." << std::endl;
     std::cout << "Approx bytes in frame buffers: " << totalBytes << "\n";
