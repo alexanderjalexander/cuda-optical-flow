@@ -6,10 +6,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include "opencv2/videoio.hpp"
 
-__global__ __forceinline__ void
+__global__ void
 test_kernel()
 {
+    printf("Hello world!");
 }
 
 int
@@ -29,42 +31,39 @@ main(int argc, char *argv[])
      */
 
     std::filesystem::path current_dir = std::filesystem::current_path();
-
     std::filesystem::path example_file = "Example-Video.mp4";
     std::filesystem::path full_path = current_dir / "Example-Video.mp4";
 
     cv::VideoCapture cap(full_path.string());
 
+    double totalFrames = cap.get(cv::CAP_PROP_FRAME_COUNT);
+    double videoFPS = cap.get(cv::CAP_PROP_FPS);
+
     if (!cap.isOpened())
     {
         std::cout << "Error: Could not open video file." << std::endl;
-        return -1;
+        return EXIT_FAILURE;
     }
     else
     {
         std::cout << "Video file opened successfully!" << std::endl;
+        std::cout << "Total frames in video: " << totalFrames << std::endl;
+        std::cout << "Video FPS: " << videoFPS << std::endl;
     }
 
-    // Read the first frame to confirm reading
+    // CPU memory frame buffer
     cv::Mat frame;
-    bool ret = cap.read(frame);
-
-    if (ret)
+    std::vector<cv::Mat> frames;
+    frames.reserve(totalFrames > 0 ? totalFrames : 1000);
+    while (cap.read(frame))
     {
-
-        // Display the frame using imshow
-        cv::imshow("First Frame", frame);
-        cv::waitKey(0);          // Wait for a key press to close the window
-        cv::destroyAllWindows(); // Close the window
+        frames.push_back(frame.clone());
     }
-    else
-    {
-        std::cout << "Error: Could not read the frame." << std::endl;
-    }
+    std::cout << "Buffered " << frames.size() << " frames." << std::endl;
 
     // Release the video capture object
     cap.release();
 
-    printf("Hello world!\n");
+    printf("Finished reading video & first frame!\n");
     return EXIT_SUCCESS;
 }
