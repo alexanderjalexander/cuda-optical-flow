@@ -6,13 +6,13 @@ FLAGS = -arch=sm_75 -std=c++17 -diag-suppress 611
 
 FORMATTER = clang-format
 FLOW_PROG = optflow
-FLOW_CLS = main.cu
-FLOW_FORMAT = ${FLOW_CLS}
+FLOW_SRCS = gpu/kernels.cu main.cpp
+FLOW_FORMAT = $(FLOW_SRCS)
 
 all: ${FLOW_PROG}
 
-${FLOW_PROG}: ${FLOW_CLS}
-	${CC} ${FLAGS} ${IFLAGS} ${LDFLAGS} ${FLOW_CLS} -o ${FLOW_PROG}
+${FLOW_PROG}: ${FLOW_SRCS}
+	${CC} ${FLAGS} ${IFLAGS} ${LDFLAGS} ${FLOW_SRCS} -o ${FLOW_PROG}
 
 clean:
 	rm -f ${FLOW_PROG}
