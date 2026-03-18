@@ -7,7 +7,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 
-#include "gpu_lk/kernels.cuh"
+#include "gpu/lk.cuh"
 
 int
 main(int argc, char *argv[])
@@ -60,24 +60,24 @@ main(int argc, char *argv[])
 
     // GPU processing: compute spatial derivatives for all frames
     std::cout << "\nSending frames to GPU...\n";
-    
+
     if (!frames.empty())
     {
         int width = frames[0].cols;
         int height = frames[0].rows;
         size_t framePixels = width * height;
-        
+
         for (size_t i = 0; i < frames.size(); ++i)
         {
             // TODO: Flesh this out
-            processFrameOnGPU();
-            
+            processFrameOnGPU(frames[i]);
+
             if ((i + 1) % 50 == 0 || i == 0)
             {
                 std::cout << "Frames Processed: " << (i + 1) << " / " << frames.size() << std::endl;
             }
         }
-        
+
         std::cout << "GPU processing complete! Processed all " << frames.size() << " frames.\n";
     }
 
