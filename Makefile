@@ -6,8 +6,8 @@ FLAGS = -arch=sm_75 -std=c++17 -diag-suppress 611
 
 FORMATTER = clang-format
 FLOW_PROG = optflow
-FLOW_SRCS = gpu/kernels.cu main.cpp
-FLOW_FORMAT = $(FLOW_SRCS)
+FLOW_SRCS = gpu/lk.cu main.cpp
+FLOW_FORMAT = $(FLOW_SRCS) gpu/lk.cuh
 
 all: ${FLOW_PROG}
 
