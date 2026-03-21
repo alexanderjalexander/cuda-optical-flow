@@ -3,6 +3,6 @@
 
 #include <opencv2/opencv.hpp>
 
-void processFrameOnGPU(const cv::Mat &frame);
+void lucasKanadeSingleFrameGPU(const cv::Mat &frame, cv::Mat &result);
 
 #endif
