@@ -2,6 +2,8 @@
 
 #include "lk.cuh"
 
+#define BLOCK_SIZE 16
+
 __global__ void
 sobelFilter(int *ix, int *iy, unsigned char *frame, int width, int height)
 {
@@ -52,9 +54,9 @@ harrisResponse(float *response, int *ix, int *iy, int width, int height)
     float sumIxy = 0;
 
     // Creating the sum matrices for each pixel
-    for (int dx = -2; dx <= 2; dx++)
+    for (int dy = -2; dy <= 2; dy++)
     {
-        for (int dy = -2; dy <= 2; dy++)
+        for (int dx = -2; dx <= 2; dx++)
         {
             float gx = (float)ix[(y + dy) * width + (x + dx)];
             float gy = (float)iy[(y + dy) * width + (x + dx)];
@@ -71,7 +73,8 @@ harrisResponse(float *response, int *ix, int *iy, int width, int height)
 }
 
 __global__ void
-harrisThresholder(int *features, int *featureCount, float *response, float threshold, int maxFeatures, int width, int height)
+harrisThresholder(int *features, int *featureCount, float *response, int maxFeatures, int width,
+                  int height)
 {
     int x = threadIdx.x + blockIdx.x * blockDim.x;
     int y = threadIdx.y + blockIdx.y * blockDim.y;
@@ -89,14 +92,11 @@ harrisThresholder(int *features, int *featureCount, float *response, float thres
         r > response[(y)*width + (x + 1)] && r > response[(y + 1) * width + (x - 1)] &&
         r > response[(y + 1) * width + (x)] && r > response[(y + 1) * width + (x + 1)])
     {
-        if (r > threshold)
+        int featureSlot = atomicAdd(featureCount, 1);
+        if (featureSlot < maxFeatures)
         {
-            int featureSlot = atomicAdd(featureCount, 1);
-            if (featureSlot < maxFeatures)
-            {
-                features[featureSlot * 2] = x;
-                features[featureSlot * 2 + 1] = y;
-            }
+            features[featureSlot * 2] = x;
+            features[featureSlot * 2 + 1] = y;
         }
     }
 }
@@ -107,8 +107,8 @@ lucasKanade(const cv::Mat &prevFrame, const cv::Mat &frame, cv::Mat &result, int
     // TODO: Consider mallocing the whole video or frame chunks to optimize?
     // TODO: any way we can make min/max computation live on GPU?
     // TODO: sobel and temporal diff are independent, how can we make them run together?
-    // TODO: make Harris not use Global Memory in the loop.
-    
+    // TODO: reduce global memory accesses?
+
     int width = frame.cols;
     int height = frame.rows;
     int size = width * height * sizeof(unsigned char);
@@ -141,7 +141,7 @@ lucasKanade(const cv::Mat &prevFrame, const cv::Mat &frame, cv::Mat &result, int
     cudaMemset(deviceFrameFeatureCount, 0, sizeof(int));
     cudaMemset(deviceResponse, 0, width * height * sizeof(float));
 
-    dim3 blockDim(16, 16, 1);
+    dim3 blockDim(BLOCK_SIZE, BLOCK_SIZE, 1);
     dim3 gridDim((int)ceil((float)width / blockDim.x), (int)ceil((float)height / blockDim.y), 1);
 
     // TODO: Kernel for Shi-Tomasi Detector
@@ -166,13 +166,8 @@ lucasKanade(const cv::Mat &prevFrame, const cv::Mat &frame, cv::Mat &result, int
 
     cudaDeviceSynchronize();
 
-    std::vector<float> response(width*height);
-    cudaMemcpy(response.data(), deviceResponse, width * height * sizeof(float), cudaMemcpyDeviceToHost);
-    float maxR = *std::max_element(response.begin(), response.end());
-    float minR = *std::min_element(response.begin(), response.end());
-    float threshold = ((maxR - minR) * 0.10) + minR;
-
-    harrisThresholder<<<gridDim, blockDim>>>(deviceFrameFeatures, deviceFrameFeatureCount, deviceResponse, threshold, maxFeatures, width, height);
+    harrisThresholder<<<gridDim, blockDim>>>(deviceFrameFeatures, deviceFrameFeatureCount, deviceResponse,
+                                             maxFeatures, width, height);
 
     cudaDeviceSynchronize();
     result.create(height, width, CV_32F);
