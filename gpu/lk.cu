@@ -83,6 +83,7 @@ harrisThresholder(int *features, int *featureCount, float *response, float thres
 
     float r = response[y * width + x];
 
+    // NMS && Thresholding, 3x3 window. just like in my 558 hw1
     if (r > response[(y - 1) * width + (x - 1)] && r > response[(y - 1) * width + (x)] &&
         r > response[(y - 1) * width + (x + 1)] && r > response[(y)*width + (x - 1)] &&
         r > response[(y)*width + (x + 1)] && r > response[(y + 1) * width + (x - 1)] &&
@@ -98,13 +99,16 @@ harrisThresholder(int *features, int *featureCount, float *response, float thres
             }
         }
     }
-
-    // non-max suppression in a 3x3 window
 }
 
 void
 lucasKanade(const cv::Mat &prevFrame, const cv::Mat &frame, cv::Mat &result, int maxFeatures)
 {
+    // TODO: Consider mallocing the whole video or frame chunks to optimize?
+    // TODO: any way we can make min/max computation live on GPU?
+    // TODO: sobel and temporal diff are independent, how can we make them run together?
+    // TODO: make Harris not use Global Memory in the loop.
+    
     int width = frame.cols;
     int height = frame.rows;
     int size = width * height * sizeof(unsigned char);

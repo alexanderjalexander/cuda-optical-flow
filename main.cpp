@@ -142,6 +142,8 @@ main(int argc, char *argv[])
 
         for (size_t i = 1; i < video.frames.size(); ++i)
         {
+            // TODO: any way we can just let this run asynchronously to make it go faster?
+            // Right now this just invokes LK once per frame and prev frame, and waits for it to finish.
             lucasKanade(video.frames[i - 1], video.frames[i], result, 1000);
 
             if ((i + 1) % 50 == 0 || i == 0)
