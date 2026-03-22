@@ -93,10 +93,10 @@ writeVideo(VideoInfo &video, std::filesystem::path video_path)
 
         writer.write(writeFrame);
 
-        if ((i + 1) % 50 == 0 || i == 0)
-        {
-            std::cout << "Frames Written: " << (i + 1) << " / " << video.frames.size() << std::endl;
-        }
+        // if ((i + 1) % 50 == 0 || i == 0)
+        // {
+        //     std::cout << "Frames Written: " << (i + 1) << " / " << video.frames.size() << std::endl;
+        // }
     }
 
     writer.release();
@@ -150,10 +150,10 @@ main(int argc, char *argv[])
             // Right now this just invokes LK once per frame and prev frame, and waits for it to finish.
             lucasKanade(video.frames[i - 1], video.frames[i], result, 1000);
 
-            if ((i + 1) % 50 == 0 || i == 0)
-            {
-                std::cout << "Frames Processed: " << (i + 1) << " / " << video.frames.size() << std::endl;
-            }
+            // if ((i + 1) % 50 == 0 || i == 0)
+            // {
+            //     std::cout << "Frames Processed: " << (i + 1) << " / " << video.frames.size() << std::endl;
+            // }
 
             video.frames[i] = result.clone();
         }
