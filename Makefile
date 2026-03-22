@@ -25,7 +25,7 @@ clean:
 	rm -f ${FLOW_PROG} ${FLOW_OBJS}
 
 format:
-	${FORMATTER} --style=file -i ${COMMON_CLS} ${FLOW_FORMAT}
+	${FORMATTER} --style=file -i ${FLOW_FORMAT}
 
 format-15:
-	${FORMATTER}-15 --style=file -i ${COMMON_CLS} ${FLOW_FORMAT}
+	${FORMATTER}-15 --style=file -i ${FLOW_FORMAT}

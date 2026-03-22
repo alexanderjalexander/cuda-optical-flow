@@ -73,8 +73,7 @@ harrisResponse(float *response, int *ix, int *iy, int width, int height)
 }
 
 __global__ void
-harrisThresholder(int *features, int *featureCount, float *response, int maxFeatures, int width,
-                  int height)
+harrisThresholder(int *features, int *featureCount, float *response, int maxFeatures, int width, int height)
 {
     int x = threadIdx.x + blockIdx.x * blockDim.x;
     int y = threadIdx.y + blockIdx.y * blockDim.y;
@@ -166,8 +165,8 @@ lucasKanade(const cv::Mat &prevFrame, const cv::Mat &frame, cv::Mat &result, int
 
     cudaDeviceSynchronize();
 
-    harrisThresholder<<<gridDim, blockDim>>>(deviceFrameFeatures, deviceFrameFeatureCount, deviceResponse,
-                                             maxFeatures, width, height);
+    harrisThresholder<<<gridDim, blockDim>>>(deviceFrameFeatures, deviceFrameFeatureCount, deviceResponse, maxFeatures,
+                                             width, height);
 
     cudaDeviceSynchronize();
     result.create(height, width, CV_32F);
