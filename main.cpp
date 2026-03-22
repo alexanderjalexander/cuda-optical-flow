@@ -121,8 +121,8 @@ main(int argc, char *argv[])
 
     std::filesystem::path current_dir = std::filesystem::current_path();
     std::filesystem::path example_file = "Example-Video.mp4";
-    std::filesystem::path full_path = current_dir / "Example-Video.mp4";
-    std::filesystem::path output_path = current_dir / "Example-Video-Output.mp4";
+    std::filesystem::path full_path = current_dir / "inputs" / "Example-Video.mp4";
+    std::filesystem::path output_path = current_dir / "outputs" / "Example-Video.mp4";
 
     VideoInfo video;
     if (readVideo(video, full_path) != EXIT_SUCCESS)
