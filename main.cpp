@@ -45,10 +45,16 @@ readVideo(VideoInfo &video, std::filesystem::path video_path)
     cv::Mat frame, gray;
     video.frames.reserve(video.totalFrames > 0 ? video.totalFrames : 100);
 
+    int i = 0;
     while (cap.read(frame))
     {
         cv::cvtColor(frame, gray, cv::COLOR_BGR2GRAY);
         video.frames.push_back(gray.clone());
+        i++;
+        // if ((i + 1) % 50 == 0 || i == 0)
+        // {
+        //     std::cout << "Frames Written: " << (i + 1) << " / " << video.frames.size() << std::endl;
+        // }
     }
     cap.release();
     std::cout << "Buffered " << video.frames.size() << " frames." << std::endl;
@@ -107,19 +113,6 @@ writeVideo(VideoInfo &video, std::filesystem::path video_path)
 int
 main(int argc, char *argv[])
 {
-    /**
-     * 1. Read the video and decode it
-     * 2. Put video frames into GPU memory
-     * 3. Run kernels individually as follows
-     *   - Convert to grayscale
-     *   - Corner Detector, obtain features
-     *   - Spatial Derivative
-     *   -
-     *
-     *
-     * https://opencv.org/reading-and-writing-videos-using-opencv/
-     */
-
     std::filesystem::path current_dir = std::filesystem::current_path();
     std::filesystem::path example_file = "Example-Video.mp4";
     std::filesystem::path full_path = current_dir / "inputs" / "Example-Video.mp4";
