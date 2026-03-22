@@ -64,17 +64,12 @@ writeVideo(VideoInfo &video, std::filesystem::path video_path)
         return EXIT_FAILURE;
     }
 
-    int width  = video.frames[0].cols;
+    int width = video.frames[0].cols;
     int height = video.frames[0].rows;
     bool isColor = (video.frames[0].channels() == 3);
 
-    cv::VideoWriter writer(
-        video_path.string(),
-        cv::VideoWriter::fourcc('a', 'v', 'c', '1'),
-        video.fps,
-        cv::Size(width, height),
-        isColor
-    );
+    cv::VideoWriter writer(video_path.string(), cv::VideoWriter::fourcc('a', 'v', 'c', '1'), video.fps,
+                           cv::Size(width, height), isColor);
 
     if (!writer.isOpened())
     {
@@ -129,7 +124,6 @@ main(int argc, char *argv[])
     std::filesystem::path full_path = current_dir / "Example-Video.mp4";
     std::filesystem::path output_path = current_dir / "Example-Video-Output.mp4";
 
-    
     VideoInfo video;
     if (readVideo(video, full_path) != EXIT_SUCCESS)
     {
@@ -146,11 +140,10 @@ main(int argc, char *argv[])
 
         cv::Mat result;
 
-        for (size_t i = 0; i < video.frames.size(); ++i)
+        for (size_t i = 1; i < video.frames.size(); ++i)
         {
-            // TODO: Flesh this out
-            lucasKanadeSingleFrameGPU(video.frames[i], result);
-            
+            lucasKanade(video.frames[i - 1], video.frames[i], result);
+
             if ((i + 1) % 50 == 0 || i == 0)
             {
                 std::cout << "Frames Processed: " << (i + 1) << " / " << video.frames.size() << std::endl;
