@@ -10,6 +10,7 @@
 #include <unistd.h>
 
 #include "gpu/lk.cuh"
+#include "timing/stopwatch.hpp"
 
 struct VideoInfo
 {
@@ -125,13 +126,16 @@ main(int argc, char *argv[])
     std::filesystem::path output_path = current_dir / "outputs" / "Example-Video.mp4";
 
     VideoInfo video;
+    startStopwatch();
     if (readVideo(video, full_path) != EXIT_SUCCESS)
     {
         return EXIT_FAILURE;
     }
+    stopStopwatch();
 
     std::cout << std::endl << "Sending frames to GPU..." << std::endl;
     std::cout << "Frames to Process: " << video.frames.size() << std::endl;
+    startStopwatch();
     if (!video.frames.empty())
     {
         int width = video.frames[0].cols;
@@ -156,13 +160,16 @@ main(int argc, char *argv[])
 
         std::cout << "GPU processing complete! Processed all " << video.frames.size() << " frames." << std::endl;
     }
+    stopStopwatch();
 
     std::cout << std::endl << "Writing output video..." << std::endl;
 
+    startStopwatch();
     if (writeVideo(video, output_path) != EXIT_SUCCESS)
     {
         return EXIT_FAILURE;
     }
+    stopStopwatch();
 
     return EXIT_SUCCESS;
 }

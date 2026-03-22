@@ -6,19 +6,19 @@ FLAGS = -arch=sm_75 -std=c++17 -diag-suppress 611
 
 FORMATTER = clang-format
 FLOW_PROG = optflow
-FLOW_OBJS = gpu/lk.o main.o
-FLOW_SRCS = gpu/lk.cu main.cpp
-FLOW_FORMAT = $(FLOW_SRCS) gpu/lk.cuh
+FLOW_OBJS = timing/stopwatch.o gpu/lk.o main.o
+FLOW_SRCS = timing/stopwatch.cpp gpu/lk.cu main.cpp
+FLOW_FORMAT = $(FLOW_SRCS) timing/stopwatch.hpp gpu/lk.cuh
 
 all: ${FLOW_PROG}
 
 ${FLOW_PROG}: ${FLOW_OBJS}
 	${CC} ${FLAGS} ${FLOW_OBJS} -o ${FLOW_PROG} ${LDFLAGS} 
 
-main.o: main.cpp
+%.o: %.cpp
 	${CC} ${FLAGS} ${IFLAGS} -c $< -o $@
 
-gpu/lk.o: gpu/lk.cu
+%.o: %.cu
 	${CC} ${FLAGS} ${IFLAGS} -c $< -o $@
 
 clean:
