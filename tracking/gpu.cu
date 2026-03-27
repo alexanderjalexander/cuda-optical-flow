@@ -102,7 +102,7 @@ harrisThresholder(int *features, int *featureCount, float *response, int maxFeat
 }
 
 void
-lucasKanadeGPUPerFrame(const cv::Mat &prevFrame, const cv::Mat &frame, cv::Mat &result, int maxFeatures)
+sparseLucasKanadeGPUPerFrame(const cv::Mat &prevFrame, const cv::Mat &frame, cv::Mat &result, int maxFeatures)
 {
     int width = frame.cols;
     int height = frame.rows;
@@ -180,7 +180,7 @@ lucasKanadeGPUPerFrame(const cv::Mat &prevFrame, const cv::Mat &frame, cv::Mat &
 }
 
 void
-lucasKanadeGPU(VideoInfo &video)
+sparseLucasKanadeGPU(VideoInfo &video)
 {
     if (!video.frames.empty())
     {
@@ -191,7 +191,7 @@ lucasKanadeGPU(VideoInfo &video)
 
         for (size_t i = 1; i < video.frames.size(); ++i)
         {
-            lucasKanadeGPUPerFrame(video.frames[i - 1], video.frames[i], result, MAX_FEATURES);
+            sparseLucasKanadeGPUPerFrame(video.frames[i - 1], video.frames[i], result, MAX_FEATURES);
 
             video.outputFrames.push_back(result.clone());
             if (i == 1)

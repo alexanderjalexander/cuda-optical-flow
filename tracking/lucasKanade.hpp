@@ -7,7 +7,7 @@
 
 #define MAX_FEATURES 40000
 
-void lucasKanadeCPU(VideoInfo &video);
-void lucasKanadeGPU(VideoInfo &video);
+void sparseLucasKanadeCPU(VideoInfo &video);
+void sparseLucasKanadeGPU(VideoInfo &video);
 
 #endif

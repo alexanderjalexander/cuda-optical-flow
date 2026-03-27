@@ -11,7 +11,7 @@ using namespace cv;
 using namespace std;
 
 void
-lucasKanadeCPU(VideoInfo &video)
+sparseLucasKanadeCPU(VideoInfo &video)
 {
     bool drawContinuous = true;
     if (video.frames.empty()) return;
