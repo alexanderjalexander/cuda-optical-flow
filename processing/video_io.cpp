@@ -84,7 +84,7 @@ int
 copyVideo(VideoInfo &dstVideo, VideoInfo &srcVideo)
 {
     dstVideo.fps = srcVideo.fps;
-    dstVideo.frames = srcVideo.frames;
+    dstVideo.totalFrames = srcVideo.totalFrames;
     dstVideo.width = srcVideo.width;
     dstVideo.height = srcVideo.height;
     for (int i = 0; i < srcVideo.frames.size(); i++)

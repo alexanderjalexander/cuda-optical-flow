@@ -11,92 +11,88 @@ using namespace cv;
 using namespace std;
 
 void
-lucasKanadeCPUPerFrame(const cv::Mat &prevFrame, const cv::Mat &frame, cv::Mat &result, int maxFeatures)
-{
-    // TODO: Completely refactor this
-    // Logic needs to be changed, because feature detections are not persistent from the first frames.
-
-    Mat prevFrameCopy;
-    Mat frameCopy;
-    vector<Point2f> p0, p1;
-
-    // defensive guard... just in case
-    if (prevFrame.channels() == 3)
-        cvtColor(prevFrame, prevFrameCopy, COLOR_BGR2GRAY);
-    else
-        prevFrameCopy = prevFrame.clone();
-
-    if (frame.channels() == 3)
-        cvtColor(frame, frameCopy, COLOR_BGR2GRAY);
-    else
-        frameCopy = frame.clone();
-
-    // Take first frame and find corners in it
-    // old frame & old gray are prevFrame
-    // frame and frame gray are frame
-    double qualityLevel = 0.005;
-    double minDistance = 3;
-    goodFeaturesToTrack(prevFrameCopy, p0, maxFeatures, qualityLevel, minDistance, Mat(), 15, true, 0.04);
-
-    // Create a mask image for drawing purposes
-    Mat frameColor, mask;
-    cvtColor(frame, frameColor, COLOR_GRAY2BGR);
-    mask = Mat::zeros(frameColor.size(), frameColor.type());
-    // Mat mask = Mat::zeros(prevFrameCopy.size(), prevFrameCopy.type());
-
-    // calculate optical flow
-    vector<uchar> status;
-    vector<float> err;
-    TermCriteria criteria = TermCriteria((TermCriteria::COUNT) + (TermCriteria::EPS), 10, 0.03);
-    calcOpticalFlowPyrLK(prevFrameCopy, frameCopy, p0, p1, status, err, Size(15,15), 2, criteria);
-
-    // Create some random colors
-    vector<Scalar> colors;
-    RNG rng(67);
-    for(int i = 0; i < p0.size(); i++)
-    {
-        int r = rng.uniform(0, 256);
-        int g = rng.uniform(0, 256);
-        int b = rng.uniform(0, 256);
-        colors.emplace_back(r,g,b);
-    }
-
-    vector<Point2f> good_new;
-    for(uint i = 0; i < p0.size(); i++)
-    {
-        // Select good points
-        if(status[i]) {
-            line(frameColor, p1[i], p0[i], colors[i], 2);
-            // circle(frameColor, p1[i], 5, colors[i], -1);
-        }
-    }
-
-    result = frameColor.clone();
-}
-
-void
 lucasKanadeCPU(VideoInfo &video)
 {
-    if (!video.frames.empty())
+    bool drawContinuous = true;
+    if (video.frames.empty()) return;
+
+    Mat old_frame = video.frames[0];
+    Mat mask = Mat::zeros(old_frame.size(), CV_8UC3);
+    RNG rng;
+
+    vector<Point2f> p0, p1;
+
+    double qualityLevel = 0.01;
+    double minDistance = 10;
+    int blockSize = 3;
+    bool useHarris = true;
+    double k = 0.04;
+    goodFeaturesToTrack(old_frame, p0, MAX_FEATURES, qualityLevel, minDistance, Mat(), blockSize, useHarris, k);
+
+    int initialFeatures = p0.size();
+
+    vector<Scalar> pt_colors;
+    for (size_t i = 0; i < p0.size(); i++) {
+        pt_colors.push_back(Scalar(rng.uniform(0, 256), rng.uniform(0, 256), rng.uniform(0, 256)));
+    }
+
+    for (size_t i = 1; i < video.frames.size(); i++)
     {
-        int width = video.frames[0].cols;
-        int height = video.frames[0].rows;
-        size_t framePixels = width * height;
+        Mat frame = video.frames[i];
+        Mat output;
+        cvtColor(frame, output, COLOR_GRAY2BGR);
 
-        cv::Mat result;
+        vector<uchar> status;
+        vector<float> err;
+        TermCriteria criteria = TermCriteria((TermCriteria::COUNT) + (TermCriteria::EPS), 10, 0.03);
+        calcOpticalFlowPyrLK(old_frame, frame, p0, p1, status, err, Size(15, 15), 2, criteria);
 
-        for (size_t i = 1; i < video.frames.size(); ++i)
+        vector<Point2f> good_new;
+
+        // draw the points if the status is good.
+        for (uint j = 0; j < p0.size(); j++)
         {
-            lucasKanadeCPUPerFrame(video.frames[i - 1], video.frames[i], result, MAX_FEATURES);
-
-            video.outputFrames.push_back(result.clone());
-            if (i == 1)
+            if (status[j] == 1)
             {
-                // Maintain same frame count
-                video.outputFrames.push_back(result.clone());
+                good_new.push_back(p1[j]);
+
+                if (drawContinuous) {
+                    line(mask, p1[j], p0[j], pt_colors[j], 2);
+                    circle(output, p1[j], 5, pt_colors[j], -1);
+                } else {
+                    arrowedLine(output, p0[j], p1[j], pt_colors[j], 5, cv::LineTypes::LINE_AA, 0, .3);
+                }
             }
         }
 
-        std::cout << "GPU processing complete! Processed all " << video.frames.size() << " frames." << std::endl;
+        // If we're drawing continuous lines throughout the whole thing.
+        if (drawContinuous) {
+            bitwise_or(output, mask, output);
+        }
+
+        video.outputFrames.push_back(output);
+        old_frame = frame.clone();
+
+        p0 = good_new;
+
+        // Point replenishment
+        if (p0.size() < initialFeatures * 0.7)
+        {
+            pt_colors.resize(p0.size());
+
+            Mat exclusionMask = Mat::ones(old_frame.size(), CV_8U) * 255;
+            for (int i = 0; i < p0.size(); i++) {
+                circle(exclusionMask, p0[i], (int)minDistance, 0, -1);
+            }
+
+            vector<Point2f> newPoints;
+            goodFeaturesToTrack(old_frame, newPoints, MAX_FEATURES, qualityLevel, minDistance, Mat(), blockSize, useHarris, k);
+
+            for (int i = 0; i < newPoints.size(); i++)
+            {
+                p0.push_back(newPoints[i]);
+                pt_colors.push_back(Scalar(rng.uniform(0, 256), rng.uniform(0, 256), rng.uniform(0, 256)));
+            }
+        }
     }
 }
