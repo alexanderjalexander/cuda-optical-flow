@@ -1,5 +1,5 @@
-#ifndef LK_H
-#define LK_H
+#ifndef LK_GPU_H
+#define LK_GPU_H
 
 #include <opencv2/opencv.hpp>
 

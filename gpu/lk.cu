@@ -3,6 +3,7 @@
 #include "lk.cuh"
 
 #define BLOCK_SIZE 16
+#define EPSILON 0.25
 
 __global__ void
 sobelFilter(int *ix, int *iy, unsigned char *frame, int width, int height)
@@ -69,7 +70,7 @@ harrisResponse(float *response, int *ix, int *iy, int width, int height)
     // Getting the corner response needed for this.
     float det = (sumIxx * sumIyy) - (sumIxy * sumIxy);
     float trace = (sumIxx + sumIyy);
-    response[y * width + x] = det - (0.06 * trace * trace);
+    response[y * width + x] = det - (EPSILON * trace * trace);
 }
 
 __global__ void
@@ -85,7 +86,7 @@ harrisThresholder(int *features, int *featureCount, float *response, int maxFeat
 
     float r = response[y * width + x];
 
-    // NMS && Thresholding, 3x3 window. just like in my 558 hw1
+    // NMS, 3x3 window. just like in my 558 hw1
     if (r > response[(y - 1) * width + (x - 1)] && r > response[(y - 1) * width + (x)] &&
         r > response[(y - 1) * width + (x + 1)] && r > response[(y)*width + (x - 1)] &&
         r > response[(y)*width + (x + 1)] && r > response[(y + 1) * width + (x - 1)] &&
@@ -143,21 +144,17 @@ lucasKanade(const cv::Mat &prevFrame, const cv::Mat &frame, cv::Mat &result, int
     dim3 blockDim(BLOCK_SIZE, BLOCK_SIZE, 1);
     dim3 gridDim((int)ceil((float)width / blockDim.x), (int)ceil((float)height / blockDim.y), 1);
 
-    // TODO: Kernel for Shi-Tomasi Detector
-
     // Shi-Tomasi:
     // https://en.wikipedia.org/wiki/Corner_detection#The_Harris_&_Stephens_/_Shi%E2%80%93Tomasi_corner_detection_algorithms
 
-    /*
-    Sparse LK Algorithm:
-    - Obtain Ix, Iy using Sobel
-    - Obtain It using simple frame subtraction
-    - Obtain features (in this case, corners w/ Harris/FAST)
-    - For each feature:
-      - Sum Ix^2, Iy^2, IxIy, IxIt, IyIt over a local window (5x5 preferably)
-    - Do the Ax = b inverted multiply, which is x = A^-1 b
-    - Obtain u, v from x, and then result that
-     */
+    // Sparse LK Algorithm:
+    // - Obtain Ix, Iy using Sobel
+    // - Obtain It using simple frame subtraction
+    // - Obtain features (in this case, corners w/ Harris/FAST)
+    // - For each feature:
+    //   - Sum Ix^2, Iy^2, IxIy, IxIt, IyIt over a local window (5x5 preferably)
+    // - Do the Ax = b inverted multiply, which is x = A^-1 b
+    // - Obtain u, v from x, and then result that
 
     sobelFilter<<<gridDim, blockDim>>>(ix, iy, deviceFrame, width, height);
     temporalDifference<<<gridDim, blockDim>>>(it, devicePrevFrame, deviceFrame, width, height);
@@ -169,6 +166,11 @@ lucasKanade(const cv::Mat &prevFrame, const cv::Mat &frame, cv::Mat &result, int
                                              width, height);
 
     cudaDeviceSynchronize();
+
+    int frameFeatureCount = 0;
+    cudaMemcpy(&frameFeatureCount, deviceFrameFeatureCount, sizeof(int), cudaMemcpyDeviceToHost);
+    // printf("Features Detected %d\n", frameFeatureCount);
+
     result.create(height, width, CV_32F);
     cudaMemcpy(result.data, deviceResponse, width * height * sizeof(float), cudaMemcpyDeviceToHost);
 
