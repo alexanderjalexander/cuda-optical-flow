@@ -199,7 +199,5 @@ sparseLucasKanadeGPU(VideoInfo &video)
                 video.outputFrames.push_back(result.clone());
             }
         }
-
-        std::cout << "GPU processing complete! Processed all " << video.frames.size() << " frames." << std::endl;
     }
 }
