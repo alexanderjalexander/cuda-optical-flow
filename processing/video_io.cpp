@@ -79,3 +79,17 @@ writeVideo(VideoInfo &video, std::filesystem::path video_path)
     std::cout << "Wrote " << video.outputFrames.size() << " frames to: " << video_path << std::endl;
     return EXIT_SUCCESS;
 }
+
+int
+copyVideo(VideoInfo &dstVideo, VideoInfo &srcVideo)
+{
+    dstVideo.fps = srcVideo.fps;
+    dstVideo.frames = srcVideo.frames;
+    dstVideo.width = srcVideo.width;
+    dstVideo.height = srcVideo.height;
+    for (int i = 0; i < srcVideo.frames.size(); i++)
+    {
+        dstVideo.frames.push_back(srcVideo.frames[i].clone());
+    }
+    return EXIT_SUCCESS;
+}

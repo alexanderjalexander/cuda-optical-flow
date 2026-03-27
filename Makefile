@@ -6,9 +6,9 @@ FLAGS = -arch=sm_75 -std=c++17 -diag-suppress 611
 
 FORMATTER = clang-format
 FLOW_PROG = optflow
-FLOW_OBJS = timing/stopwatch.o gpu/lk.o cpu/lk.o main.o
-FLOW_SRCS = timing/stopwatch.cpp gpu/lk.cu cpu/lk.cpp main.cpp
-FLOW_FORMAT = $(FLOW_SRCS) timing/stopwatch.hpp gpu/lk.cuh
+FLOW_OBJS = timing/stopwatch.o tracking/cpu.o tracking/gpu.o processing/video_io.o main.o
+FLOW_SRCS = timing/stopwatch.cpp tracking/cpu.cpp tracking/gpu.cu processing/video_io.cpp main.cpp
+FLOW_FORMAT = $(FLOW_SRCS) timing/stopwatch.hpp tracking/lucasKanade.hpp
 
 all: ${FLOW_PROG}
 

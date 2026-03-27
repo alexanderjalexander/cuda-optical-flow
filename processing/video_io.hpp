@@ -18,5 +18,6 @@ struct VideoInfo
 
 int readVideo(VideoInfo &video, std::filesystem::path video_path);
 int writeVideo(VideoInfo &video, std::filesystem::path video_path);
+int copyVideo(VideoInfo &video1, VideoInfo &video2);
 
 #endif
