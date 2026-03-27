@@ -13,7 +13,6 @@ using namespace std;
 void
 sparseLucasKanadeCPU(VideoInfo &video)
 {
-    bool drawContinuous = true;
     if (video.frames.empty()) return;
 
     Mat old_frame = video.frames[0];
@@ -56,7 +55,7 @@ sparseLucasKanadeCPU(VideoInfo &video)
             {
                 good_new.push_back(p1[j]);
 
-                if (drawContinuous) {
+                if (DRAW_CONTINUOUS_LINES) {
                     line(mask, p1[j], p0[j], pt_colors[j], 2);
                     circle(output, p1[j], 5, pt_colors[j], -1);
                 } else {
@@ -66,7 +65,7 @@ sparseLucasKanadeCPU(VideoInfo &video)
         }
 
         // If we're drawing continuous lines throughout the whole thing.
-        if (drawContinuous) {
+        if (DRAW_CONTINUOUS_LINES) {
             bitwise_or(output, mask, output);
         }
 

@@ -42,7 +42,7 @@ main(int argc, char *argv[])
     std::cout << std::endl << "Starting GPU Lucas Kanade..." << std::endl;
     std::cout << "Frames to Process: " << gpuVideo.frames.size() << std::endl;
     startStopwatch();
-    lucasKanadeGPU(gpuVideo);
+    sparseLucasKanadeGPU(gpuVideo);
     stopStopwatch();
 
     std::cout << std::endl << "Writing GPU Lucas Kanade output to video..." << std::endl;
@@ -59,7 +59,7 @@ main(int argc, char *argv[])
     std::cout << std::endl << "Starting CPU Lucas Kanade..." << std::endl;
     std::cout << "Frames to Process: " << cpuVideo.frames.size() << std::endl;
     startStopwatch();
-    lucasKanadeCPU(cpuVideo);
+    sparseLucasKanadeCPU(cpuVideo);
     stopStopwatch();
 
     std::cout << std::endl << "Writing CPU Lucas Kanade output to video..." << std::endl;
