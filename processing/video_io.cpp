@@ -5,7 +5,7 @@ readVideo(VideoInfo &video, std::filesystem::path video_path)
 {
     cv::VideoCapture cap(video_path.string());
 
-    video.totalFrames = cap.get(cv::CAP_PROP_FRAME_COUNT);
+    int totalFrames = cap.get(cv::CAP_PROP_FRAME_COUNT);
     video.fps = cap.get(cv::CAP_PROP_FPS);
 
     if (!cap.isOpened())
@@ -17,12 +17,12 @@ readVideo(VideoInfo &video, std::filesystem::path video_path)
     else
     {
         std::cout << "Video file opened successfully!" << std::endl;
-        std::cout << "Total frames in video: " << video.totalFrames << std::endl;
+        std::cout << "Total frames in video: " << totalFrames << std::endl;
         std::cout << "Video FPS: " << video.fps << std::endl;
     }
 
     cv::Mat frame, gray;
-    video.frames.reserve(video.totalFrames > 0 ? video.totalFrames : 100);
+    video.frames.reserve(totalFrames > 0 ? totalFrames : 100);
 
     int i = 0;
     while (cap.read(frame))
@@ -84,7 +84,6 @@ int
 copyVideo(VideoInfo &dstVideo, VideoInfo &srcVideo)
 {
     dstVideo.fps = srcVideo.fps;
-    dstVideo.totalFrames = srcVideo.totalFrames;
     dstVideo.width = srcVideo.width;
     dstVideo.height = srcVideo.height;
     for (int i = 0; i < srcVideo.frames.size(); i++)

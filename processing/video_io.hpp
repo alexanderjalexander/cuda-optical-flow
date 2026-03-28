@@ -11,7 +11,6 @@ struct VideoInfo
     std::vector<cv::Mat> frames;
     std::vector<cv::Mat> outputFrames;
     double fps;
-    int totalFrames;
     int width;
     int height;
 };

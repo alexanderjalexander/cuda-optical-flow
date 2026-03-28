@@ -1,11 +1,7 @@
 #include <iostream>
-#include <opencv2/core.hpp>
-#include <opencv2/highgui.hpp>
-#include <opencv2/imgproc.hpp>
-#include <opencv2/videoio.hpp>
-#include <opencv2/video.hpp>
 
 #include "lucasKanade.hpp"
+#include "../processing/drawing.hpp"
 
 using namespace cv;
 using namespace std;
@@ -30,10 +26,7 @@ sparseLucasKanadeCPU(VideoInfo &video)
 
     int initialFeatures = p0.size();
 
-    vector<Scalar> pt_colors;
-    for (size_t i = 0; i < p0.size(); i++) {
-        pt_colors.push_back(Scalar(rng.uniform(0, 256), rng.uniform(0, 256), rng.uniform(0, 256)));
-    }
+    vector<Scalar> pt_colors = getRandomColors(initialFeatures);
 
     for (size_t i = 1; i < video.frames.size(); i++)
     {
@@ -46,31 +39,20 @@ sparseLucasKanadeCPU(VideoInfo &video)
         TermCriteria criteria = TermCriteria((TermCriteria::COUNT) + (TermCriteria::EPS), 10, 0.03);
         calcOpticalFlowPyrLK(old_frame, frame, p0, p1, status, err, Size(15, 15), 2, criteria);
 
-        vector<Point2f> good_new;
+        drawOpticalFlow(output, mask, p0, p1, status, pt_colors, DRAW_CONTINUOUS_LINES);
 
-        // draw the points if the status is good.
+        video.outputFrames.push_back(output);
+        old_frame = frame.clone();
+
+        // Frame Recalculation Logic
+        vector<Point2f> good_new;
         for (uint j = 0; j < p0.size(); j++)
         {
             if (status[j] == 1)
             {
                 good_new.push_back(p1[j]);
-
-                if (DRAW_CONTINUOUS_LINES) {
-                    line(mask, p1[j], p0[j], pt_colors[j], 2);
-                    circle(output, p1[j], 5, pt_colors[j], -1);
-                } else {
-                    arrowedLine(output, p0[j], p1[j], pt_colors[j], 5, cv::LineTypes::LINE_AA, 0, .3);
-                }
             }
         }
-
-        // If we're drawing continuous lines throughout the whole thing.
-        if (DRAW_CONTINUOUS_LINES) {
-            bitwise_or(output, mask, output);
-        }
-
-        video.outputFrames.push_back(output);
-        old_frame = frame.clone();
 
         p0 = good_new;
 
