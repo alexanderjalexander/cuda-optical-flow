@@ -8,29 +8,29 @@
 #define EPSILON 0.04
 
 __global__ void
-sobelFilter(int *ix, int *iy, unsigned char *frame, int width, int height)
+sobelFilter(float *ix, float *iy, unsigned char *frame, int width, int height)
 {
     int x = threadIdx.x + blockIdx.x * blockDim.x;
     int y = threadIdx.y + blockIdx.y * blockDim.y;
 
-    int dx, dy;
+    float dx, dy;
 
     if (x > 0 && y > 0 && x < width - 1 && y < height - 1)
     {
         dx = (-1 * frame[(y - 1) * width + (x - 1)]) + (-2 * frame[y * width + (x - 1)]) +
              (-1 * frame[(y + 1) * width + (x - 1)]) + (frame[(y - 1) * width + (x + 1)]) +
              (2 * frame[y * width + (x + 1)]) + (frame[(y + 1) * width + (x + 1)]);
-        dy = (frame[(y - 1) * width + (x - 1)]) + (2 * frame[(y - 1) * width + x]) +
-             (frame[(y - 1) * width + (x + 1)]) + (-1 * frame[(y + 1) * width + (x - 1)]) +
-             (-2 * frame[(y + 1) * width + x]) + (-1 * frame[(y + 1) * width + (x + 1)]);
+        dy = (-1 * frame[(y - 1) * width + (x - 1)]) + (-2 * frame[(y - 1) * width + x]) +
+             (-1 * frame[(y - 1) * width + (x + 1)]) + (1 * frame[(y + 1) * width + (x - 1)]) +
+             (2 * frame[(y + 1) * width + x]) + (1 * frame[(y + 1) * width + (x + 1)]);
 
-        ix[y * width + x] = dx;
-        iy[y * width + x] = dy;
+        ix[y * width + x] = dx/8;
+        iy[y * width + x] = dy/8;
     }
 }
 
 __global__ void
-temporalDifference(int *it, unsigned char *prevFrame, unsigned char *frame, int width, int height)
+temporalDifference(float *it, unsigned char *prevFrame, unsigned char *frame, int width, int height)
 {
     int x = threadIdx.x + blockIdx.x * blockDim.x;
     int y = threadIdx.y + blockIdx.y * blockDim.y;
@@ -42,7 +42,7 @@ temporalDifference(int *it, unsigned char *prevFrame, unsigned char *frame, int 
 }
 
 __global__ void
-harrisResponse(float *response, int *ix, int *iy, int width, int height)
+harrisResponse(float *response, float *ix, float *iy, int width, int height)
 {
     int x = threadIdx.x + blockIdx.x * blockDim.x;
     int y = threadIdx.y + blockIdx.y * blockDim.y;
@@ -61,8 +61,8 @@ harrisResponse(float *response, int *ix, int *iy, int width, int height)
     {
         for (int dx = -2; dx <= 2; dx++)
         {
-            float gx = (float)ix[(y + dy) * width + (x + dx)];
-            float gy = (float)iy[(y + dy) * width + (x + dx)];
+            float gx = ix[(y + dy) * width + (x + dx)];
+            float gy = iy[(y + dy) * width + (x + dx)];
             sumIxx += gx * gx;
             sumIyy += gy * gy;
             sumIxy += gx * gy;
@@ -118,7 +118,7 @@ harrisThresholder(float3 *features, int *featureCount, float *response, int maxF
 }
 
 __global__ void
-lucasKanadeSolver(float2 *flowVectors, int *ix, int *iy, int *it, float3 *features, int *featureCount, int width, int height)
+lucasKanadeSolver(float2 *flowVectors, float *ix, float *iy, float *it, float3 *features, int *featureCount, int width, int height)
 {
     // TODO: figure out why the points are barely moving.
     int i = blockIdx.x * blockDim.x + threadIdx.x;
@@ -203,9 +203,9 @@ sparseLucasKanadeGPU(VideoInfo &video)
     unsigned char *deviceFrame = NULL;
     unsigned char *devicePrevFrame = NULL;
 
-    int *deviceIx = NULL;
-    int *deviceIy = NULL;
-    int *deviceIt = NULL;
+    float *deviceIx = NULL;
+    float *deviceIy = NULL;
+    float *deviceIt = NULL;
 
     float3 *deviceFrameFeatures = NULL;
     float2 *deviceFlowVectors = NULL;
@@ -215,9 +215,9 @@ sparseLucasKanadeGPU(VideoInfo &video)
     cudaMalloc(&deviceFrame, width * height * sizeof(unsigned char));
     cudaMalloc(&devicePrevFrame, width * height * sizeof(unsigned char));
 
-    cudaMalloc(&deviceIx, width * height * sizeof(int));
-    cudaMalloc(&deviceIy, width * height * sizeof(int));
-    cudaMalloc(&deviceIt, width * height * sizeof(int));
+    cudaMalloc(&deviceIx, width * height * sizeof(float));
+    cudaMalloc(&deviceIy, width * height * sizeof(float));
+    cudaMalloc(&deviceIt, width * height * sizeof(float));
 
     cudaMalloc(&deviceFrameFeatures, MAX_FEATURES * sizeof(float3));
     cudaMalloc(&deviceFlowVectors, MAX_FEATURES * sizeof(float2));
@@ -227,9 +227,9 @@ sparseLucasKanadeGPU(VideoInfo &video)
     cudaMemcpy(deviceFrame, video.frames[0].data, size, cudaMemcpyHostToDevice);
     cudaMemcpy(devicePrevFrame, video.frames[1].data, size, cudaMemcpyHostToDevice);
 
-    cudaMemset(deviceIx, 0, width * height * sizeof(int));
-    cudaMemset(deviceIy, 0, width * height * sizeof(int));
-    cudaMemset(deviceIt, 0, width * height * sizeof(int));
+    cudaMemset(deviceIx, 0, width * height * sizeof(float));
+    cudaMemset(deviceIy, 0, width * height * sizeof(float));
+    cudaMemset(deviceIt, 0, width * height * sizeof(float));
 
     cudaMemset(deviceFrameFeatures, 0, MAX_FEATURES * sizeof(float3));
     cudaMemset(deviceFlowVectors, 0, MAX_FEATURES * sizeof(float2));
