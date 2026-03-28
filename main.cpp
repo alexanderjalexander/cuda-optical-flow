@@ -19,7 +19,7 @@ main(int argc, char *argv[])
     // Reading the videos
 
     std::filesystem::path current_dir = std::filesystem::current_path();
-    std::string file_input = "Demon-Slayer";
+    std::string file_input = "Slow-Traffic";
     std::filesystem::path full_path = current_dir / "inputs" / (file_input + ".mp4");
     std::filesystem::path gpu_output_path = current_dir / "outputs" / (file_input + "-GPU.mp4");
     std::filesystem::path cpu_output_path = current_dir / "outputs" / (file_input + "-CPU.mp4");

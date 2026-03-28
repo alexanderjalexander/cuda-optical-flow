@@ -45,6 +45,7 @@ void
 drawOpticalFlowGPU(
     Mat &output,
     Mat &mask,
+    Vec3f *prevFeatures,
     Vec3f *features,
     int featureCount,
     const vector<Scalar>& colors,
@@ -54,8 +55,15 @@ drawOpticalFlowGPU(
     {
         if (features[i][2] == 1)
         {
-            Point2f pointToPlace(features[i][0], features[i][1]);
-            circle(output, pointToPlace, 5, colors[i], -1);
+            Point2f p0(features[i][0], features[i][1]);
+            Point2f p1(features[i][0], features[i][1]);
+
+            if (drawContinuous) {
+                line(mask, p1, p0, colors[i], 2);
+                circle(output, p1, 5, colors[i], -1);
+            } else {
+                arrowedLine(output, p0, p1, colors[i], 5, cv::LineTypes::LINE_AA, 0, .3);
+            }
         }
     }
 

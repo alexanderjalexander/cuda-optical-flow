@@ -6,7 +6,7 @@
 #include "../processing/video_io.hpp"
 
 #define DRAW_CONTINUOUS_LINES true
-#define MAX_FEATURES 40000
+#define MAX_FEATURES 1000
 
 void sparseLucasKanadeCPU(VideoInfo &video);
 void sparseLucasKanadeGPU(VideoInfo &video);

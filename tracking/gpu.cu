@@ -88,25 +88,39 @@ harrisThresholder(float3 *features, int *featureCount, float *response, int maxF
 
     float r = response[y * width + x];
 
-    // NMS, 3x3 window. just like in my 558 hw1
-    if (r > response[(y - 1) * width + (x - 1)] && r > response[(y - 1) * width + (x)] &&
-        r > response[(y - 1) * width + (x + 1)] && r > response[(y)*width + (x - 1)] &&
-        r > response[(y)*width + (x + 1)] && r > response[(y + 1) * width + (x - 1)] &&
-        r > response[(y + 1) * width + (x)] && r > response[(y + 1) * width + (x + 1)])
+    // NMS, 20x20 window
+    for (int yShift = -10; yShift <= 10; yShift++)
     {
-        int featureSlot = atomicAdd(featureCount, 1);
-        if (featureSlot < maxFeatures)
+        for (int xShift = -10; xShift <= 10; xShift++)
         {
-            features[featureSlot].x = x;
-            features[featureSlot].y = y;
-            features[featureSlot].z = 1; // valid or invalid check
+            if (yShift == 0 && xShift == 0)
+            {
+                continue;
+            }
+            if (y + yShift < 0 || x + xShift < 0 || y + yShift >= height || x + xShift >= width)
+            {
+                continue;
+            }
+            if (r <= response[(y + yShift) * width + (x + xShift)])
+            {
+                return;
+            }
         }
+    }
+
+    int featureSlot = atomicAdd(featureCount, 1);
+    if (featureSlot < maxFeatures)
+    {
+        features[featureSlot].x = x;
+        features[featureSlot].y = y;
+        features[featureSlot].z = 1;
     }
 }
 
 __global__ void
 lucasKanadeSolver(float2 *flowVectors, int *ix, int *iy, int *it, float3 *features, int *featureCount, int width, int height)
 {
+    // TODO: figure out why the points are barely moving.
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= *featureCount || features[i].z != 1)
         return;
@@ -144,7 +158,7 @@ lucasKanadeSolver(float2 *flowVectors, int *ix, int *iy, int *it, float3 *featur
     if (fabs(det) < 1e-6)
     {
         features[i].z = 0;
-        return; // it's already memset to 0, so we're fine.
+        return;
     }
 
     flowVectors[i].x = ((sumIyy * -sumIxt) + (-sumIxy * -sumIyt)) / det;
@@ -155,14 +169,17 @@ __global__ void
 updateTrackingPoints(float3 *features, int *featureCount, float2 *flowVectors, int width, int height)
 {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
-    if (i >= *featureCount)
+    if (i >= *featureCount || features[i].z != 1)
         return;
 
-    float updatedX = roundf(features[i].x + flowVectors[i].x);
-    float updatedY = roundf(features[i].y + flowVectors[i].y);
+    float updatedX = (features[i].x + flowVectors[i].x);
+    float updatedY = (features[i].y + flowVectors[i].y);
 
     if (updatedX < 0 || updatedX >= width || updatedY < 0 || updatedY >= height)
+    {
         features[i].z = 0;
+        return;
+    }
 
     features[i].x = updatedX;
     features[i].y = updatedY;
@@ -230,36 +247,48 @@ sparseLucasKanadeGPU(VideoInfo &video)
 
     int featureCount = 0;
     cudaMemcpy(&featureCount, deviceFrameFeatureCount, sizeof(int), cudaMemcpyDeviceToHost);
+    // THIS IS ABSOLUTELY CRITICAL
+    // IF WE EVER HAVE A SEGFAULT IN CUDA, IT JUST BORKS THE WHOLE PROGRAM
+    featureCount = min(featureCount, MAX_FEATURES);
+
+    float3 *prevFrameFeatures = (float3*) calloc(featureCount, sizeof(float3));
+    float3 *frameFeatures = (float3*) calloc(featureCount, sizeof(float3));
+    cudaMemcpy(prevFrameFeatures, deviceFrameFeatures, featureCount * sizeof(float3), cudaMemcpyDeviceToHost);
 
     vector<Scalar> pt_colors = getRandomColors(featureCount);
 
     for (int i = 1; i < video.frames.size(); i++) {
-        std::cout << i << endl;
+        // std::cout << i << endl;
         // unsigned char* tempPtr = deviceFrame;
         cudaMemcpy(deviceFrame, video.frames[i].data, size, cudaMemcpyHostToDevice);
-        cudaMemcpy(devicePrevFrame, video.frames[i-1].data, size, cudaMemcpyHostToDevice);
 
         sobelFilter<<<gridDim, blockDim>>>(deviceIx, deviceIy, deviceFrame, width, height);
         temporalDifference<<<gridDim, blockDim>>>(deviceIt, devicePrevFrame, deviceFrame, width, height);
         cudaDeviceSynchronize();
 
         dim3 featureBlockDim(BLOCK_SIZE*BLOCK_SIZE, 1, 1);
-        dim3 featureGridDim((int)ceil((float)MAX_FEATURES / featureBlockDim.x), 1, 1);
+        dim3 featureGridDim((int)ceil((float)featureCount / featureBlockDim.x), 1, 1);
 
         lucasKanadeSolver<<<featureGridDim, featureBlockDim>>>(deviceFlowVectors, deviceIx, deviceIy, deviceIt, deviceFrameFeatures, deviceFrameFeatureCount, width, height);
         updateTrackingPoints<<<featureGridDim, featureBlockDim>>>(deviceFrameFeatures, deviceFrameFeatureCount, deviceFlowVectors, width, height);
+        cudaDeviceSynchronize();
 
-        std::vector<float3> frameFeatures(MAX_FEATURES);
-        cudaMemcpy(frameFeatures.data(), deviceFrameFeatures, featureCount * sizeof(float3), cudaMemcpyDeviceToHost);
+        cudaMemcpy(frameFeatures, deviceFrameFeatures, featureCount * sizeof(float3), cudaMemcpyDeviceToHost);
 
-        // TODO: this is still broken...
         Mat output;
         cvtColor(video.frames[i], output, COLOR_GRAY2BGR);
-        drawOpticalFlowGPU(output, mask, reinterpret_cast<cv::Vec3f*>(frameFeatures.data()), featureCount, pt_colors, DRAW_CONTINUOUS_LINES);
+        drawOpticalFlowGPU(output, mask, reinterpret_cast<cv::Vec3f*>(prevFrameFeatures), reinterpret_cast<cv::Vec3f*>(frameFeatures), featureCount, pt_colors, DRAW_CONTINUOUS_LINES);
+
+        std::memcpy(prevFrameFeatures, frameFeatures, featureCount * sizeof(float3));
         video.outputFrames.push_back(output);
+
+        cudaMemcpy(devicePrevFrame, deviceFrame, size, cudaMemcpyDeviceToDevice);
 
         // TODO: If Features get low, then recalculate them.
     }
+
+    free(prevFrameFeatures);
+    free(frameFeatures);
 
     cudaFree(deviceFrame);
     cudaFree(devicePrevFrame);

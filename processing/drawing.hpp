@@ -24,6 +24,7 @@ void drawOpticalFlow(
 void drawOpticalFlowGPU(
     Mat &output,
     Mat &mask,
+    Vec3f *prevFeatures,
     Vec3f *features,
     int featureCount,
     const vector<Scalar>& colors,
