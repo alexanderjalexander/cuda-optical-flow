@@ -57,23 +57,23 @@ sparseLucasKanadeCPU(VideoInfo &video)
         p0 = good_new;
 
         // Point replenishment
-        if (p0.size() < initialFeatures * 0.7)
-        {
-            pt_colors.resize(p0.size());
+        // if (p0.size() < initialFeatures * 0.7)
+        // {
+        //     pt_colors.resize(p0.size());
 
-            Mat exclusionMask = Mat::ones(old_frame.size(), CV_8U) * 255;
-            for (int i = 0; i < p0.size(); i++) {
-                circle(exclusionMask, p0[i], (int)minDistance, 0, -1);
-            }
+        //     Mat exclusionMask = Mat::ones(old_frame.size(), CV_8U) * 255;
+        //     for (int i = 0; i < p0.size(); i++) {
+        //         circle(exclusionMask, p0[i], (int)minDistance, 0, -1);
+        //     }
 
-            vector<Point2f> newPoints;
-            goodFeaturesToTrack(old_frame, newPoints, MAX_FEATURES, qualityLevel, minDistance, Mat(), blockSize, useHarris, k);
+        //     vector<Point2f> newPoints;
+        //     goodFeaturesToTrack(old_frame, newPoints, MAX_FEATURES, qualityLevel, minDistance, Mat(), blockSize, useHarris, k);
 
-            for (int i = 0; i < newPoints.size(); i++)
-            {
-                p0.push_back(newPoints[i]);
-                pt_colors.push_back(Scalar(rng.uniform(0, 256), rng.uniform(0, 256), rng.uniform(0, 256)));
-            }
-        }
+        //     for (int i = 0; i < newPoints.size(); i++)
+        //     {
+        //         p0.push_back(newPoints[i]);
+        //         pt_colors.push_back(Scalar(rng.uniform(0, 256), rng.uniform(0, 256), rng.uniform(0, 256)));
+        //     }
+        // }
     }
 }
