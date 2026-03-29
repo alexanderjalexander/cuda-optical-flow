@@ -78,6 +78,8 @@ harrisResponse(float *response, float *ix, float *iy, int width, int height)
 __global__ void
 harrisThresholder(float3 *features, int *featureCount, float *response, int maxFeatures, int width, int height)
 {
+    // TODO: Figure out either here, or in the response, why we get points in places with bad edges (skies)
+
     int x = threadIdx.x + blockIdx.x * blockDim.x;
     int y = threadIdx.y + blockIdx.y * blockDim.y;
 
@@ -120,7 +122,6 @@ harrisThresholder(float3 *features, int *featureCount, float *response, int maxF
 __global__ void
 lucasKanadeSolver(float2 *flowVectors, float *ix, float *iy, float *it, float3 *features, int *featureCount, int width, int height)
 {
-    // TODO: figure out why the points are barely moving.
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= *featureCount || features[i].z != 1)
         return;
@@ -284,6 +285,12 @@ sparseLucasKanadeGPU(VideoInfo &video)
 
         cudaMemcpy(devicePrevFrame, deviceFrame, size, cudaMemcpyDeviceToDevice);
 
+        // TODO: Gaussian Weighted Average
+        // 2:00 - https://www.youtube.com/watch?v=79Ty2Kkivvc
+        // TODO: Iterative Refinement
+        // 2:16 - https://www.youtube.com/watch?v=79Ty2Kkivvc
+        // TODO: Coarse-To-Fine
+        // 2:55 - https://www.youtube.com/watch?v=79Ty2Kkivvc
         // TODO: If Features get low, then recalculate them.
     }
 
