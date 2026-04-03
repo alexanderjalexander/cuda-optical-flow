@@ -8,11 +8,20 @@ This repo serves to host the files for a CUDA-based implementation of Sparse Luc
 
 These instructions assume you have a qualifying NVIDIA GPU with architecture at least SM_75.
 
++ Install the appropriate NVIDIA Drivers, either from cuda-fedora43-... or the RPM nonfree repositories.
 + Install the `opencv` development headers
   - `sudo dnf install opencv opencv-devel`
 + Install CUDA Toolkit
   - See the [official instructions here](https://developer.nvidia.com/cuda-downloads?target_os=Linux&target_arch=x86_64&Distribution=Fedora&target_version=43&target_type=rpm_network) for installing it over a network installation.
 + Clone the repository
+
+### Dependency Installation on Debian 13
+
++ Ensure that you enable the `contrib`, `non-free`, and the `non-free-firmware` repositories by editing `/etc/apt/sources.list`
++ Install and run `nvidia-detect` to find the specific NVIDIA driver that works for your system.
++ Install that driver, as well as `nvidia-kernel-dkms`, `linux-headers-$(uname -r)`, `build-essential`, and then `dkms`
++ Install `libopencv-dev`
++ Install CUDA Toolkit 13.2 according to the instructions at [this link here](https://developer.nvidia.com/cuda-downloads?target_os=Linux&target_arch=x86_64&Distribution=Debian&target_version=13&target_type=deb_network)
 
 # Source Credits
 
