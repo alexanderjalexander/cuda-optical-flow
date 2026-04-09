@@ -233,6 +233,7 @@ sparseLucasKanadeGPU(VideoInfo &video)
 
     // === Pointer Memory Allocation ===
 
+    // TODO: Error check???
     cudaMalloc(&deviceFrame, width * height * sizeof(unsigned char));
     cudaMalloc(&devicePrevFrame, width * height * sizeof(unsigned char));
 
@@ -339,6 +340,11 @@ sparseLucasKanadeGPU(VideoInfo &video)
         // 2:00 - https://www.youtube.com/watch?v=79Ty2Kkivvc
         // TODO: Iterative Refinement
         // 2:16 - https://www.youtube.com/watch?v=79Ty2Kkivvc
+        // - Make cumulative flow values u and v
+        // - Loop over the sumIxx parts for a certain number of iterations
+        // - Grab the sum of points
+        // - Recalculate the temporal derivative from the first image (bilinear)
+        // - Calculate du, dv, add them to u and v, then break if we're decently converging
         // TODO: Coarse-To-Fine
         // 2:55 - https://www.youtube.com/watch?v=79Ty2Kkivvc
         // TODO: If Features get low, then recalculate them.
