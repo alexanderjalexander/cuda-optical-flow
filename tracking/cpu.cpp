@@ -1,7 +1,8 @@
-#include <iostream>
+#include "../processing/drawing.hpp"
 
 #include "lucasKanade.hpp"
-#include "../processing/drawing.hpp"
+
+#include <iostream>
 
 using namespace cv;
 using namespace std;
@@ -9,7 +10,10 @@ using namespace std;
 void
 sparseLucasKanadeCPU(VideoInfo &video)
 {
-    if (video.frames.empty()) return;
+    if (video.frames.empty())
+    {
+        return;
+    }
 
     Mat old_frame = video.frames[0];
     Mat mask = Mat::zeros(old_frame.size(), CV_8UC3);
@@ -67,7 +71,8 @@ sparseLucasKanadeCPU(VideoInfo &video)
         //     }
 
         //     vector<Point2f> newPoints;
-        //     goodFeaturesToTrack(old_frame, newPoints, MAX_FEATURES, qualityLevel, minDistance, Mat(), blockSize, useHarris, k);
+        //     goodFeaturesToTrack(old_frame, newPoints, MAX_FEATURES, qualityLevel, minDistance, Mat(), blockSize,
+        //     useHarris, k);
 
         //     for (int i = 0; i < newPoints.size(); i++)
         //     {

@@ -1,6 +1,9 @@
 #include <opencv2/opencv.hpp>
-
 #include <sys/stat.h>
+
+#include "processing/video_io.hpp"
+#include "timing/stopwatch.hpp"
+#include "tracking/lucasKanade.hpp"
 
 #include <cstdlib>
 #include <filesystem>
@@ -11,12 +14,8 @@
 #include <stdlib.h>
 #include <unistd.h>
 
-#include "tracking/lucasKanade.hpp"
-#include "timing/stopwatch.hpp"
-#include "processing/video_io.hpp"
-
 static void
-usage(const char* progname)
+usage(const char *progname)
 {
     printf("Usage: %s\n", progname);
 }

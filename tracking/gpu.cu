@@ -1,11 +1,11 @@
 #include <thrust/device_ptr.h>
 #include <thrust/extrema.h>
 
-#include <stdio.h>
-
 #include "../processing/drawing.hpp"
 
 #include "lucasKanade.hpp"
+
+#include <stdio.h>
 
 #define BLOCK_SIZE 16
 #define HARRIS_EPSILON 0.04
@@ -27,8 +27,8 @@ sobelFilter(float *ix, float *iy, unsigned char *frame, int width, int height)
              (-1 * frame[(y - 1) * width + (x + 1)]) + (1 * frame[(y + 1) * width + (x - 1)]) +
              (2 * frame[(y + 1) * width + x]) + (1 * frame[(y + 1) * width + (x + 1)]);
 
-        ix[y * width + x] = dx/8;
-        iy[y * width + x] = dy/8;
+        ix[y * width + x] = dx / 8;
+        iy[y * width + x] = dy / 8;
     }
 }
 
@@ -81,7 +81,8 @@ harrisResponse(float *response, float *ix, float *iy, int width, int height)
 }
 
 __global__ void
-harrisThresholder(float3 *features, int *featureCount, float *response, float threshold, int maxFeatures, int width, int height)
+harrisThresholder(float3 *features, int *featureCount, float *response, float threshold, int maxFeatures, int width,
+                  int height)
 {
     int x = threadIdx.x + blockIdx.x * blockDim.x;
     int y = threadIdx.y + blockIdx.y * blockDim.y;
@@ -128,11 +129,14 @@ harrisThresholder(float3 *features, int *featureCount, float *response, float th
 }
 
 __global__ void
-lucasKanadeSolver(float2 *flowVectors, float *ix, float *iy, float *it, float3 *features, int *featureCount, int width, int height)
+lucasKanadeSolver(float2 *flowVectors, float *ix, float *iy, float *it, float3 *features, int *featureCount, int width,
+                  int height)
 {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= *featureCount || features[i].z != 1)
+    {
         return;
+    }
 
     int centerX = features[i].x;
     int centerY = features[i].y;
@@ -150,7 +154,9 @@ lucasKanadeSolver(float2 *flowVectors, float *ix, float *iy, float *it, float3 *
         for (int x = -window_half; x <= window_half; x++)
         {
             if ((centerX + x) < 0 || (centerX + x) >= width || (centerY + y) < 0 || (centerY + y) >= height)
+            {
                 continue;
+            }
             int currentCoord = ((centerY + y) * width) + (centerX + x);
             sumIxx += ix[currentCoord] * ix[currentCoord];
             sumIyy += iy[currentCoord] * iy[currentCoord];
@@ -179,7 +185,9 @@ updateTrackingPoints(float3 *features, int *featureCount, float2 *flowVectors, i
 {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= *featureCount || features[i].z != 1)
+    {
         return;
+    }
 
     float updatedX = (features[i].x + flowVectors[i].x);
     float updatedY = (features[i].y + flowVectors[i].y);
@@ -275,8 +283,8 @@ sparseLucasKanadeGPU(VideoInfo &video)
     float responseMax = *thrust::max_element(responsePtr, responsePtr + (width * height));
     float responseThreshold = responseMin + (0.01f * (responseMax - responseMin));
 
-    harrisThresholder<<<gridDim, blockDim>>>(deviceFrameFeatures, deviceFrameFeatureCount, deviceResponse, responseThreshold, MAX_FEATURES,
-                                             width, height);
+    harrisThresholder<<<gridDim, blockDim>>>(deviceFrameFeatures, deviceFrameFeatureCount, deviceResponse,
+                                             responseThreshold, MAX_FEATURES, width, height);
     cudaDeviceSynchronize();
 
     // == Getting Feature Counts ==
@@ -287,17 +295,18 @@ sparseLucasKanadeGPU(VideoInfo &video)
      * Below line is needed to prevent CUDA from accessing bad memory, otherwise we'll have no results
      */
     featureCount = min(featureCount, MAX_FEATURES);
-    float3 *prevFrameFeatures = (float3*) calloc(featureCount, sizeof(float3));
-    float3 *frameFeatures = (float3*) calloc(featureCount, sizeof(float3));
+    float3 *prevFrameFeatures = (float3 *)calloc(featureCount, sizeof(float3));
+    float3 *frameFeatures = (float3 *)calloc(featureCount, sizeof(float3));
     cudaMemcpy(prevFrameFeatures, deviceFrameFeatures, featureCount * sizeof(float3), cudaMemcpyDeviceToHost);
     std::vector<cv::Scalar> pt_colors = getRandomColors(featureCount);
 
-    dim3 featureBlockDim(BLOCK_SIZE*BLOCK_SIZE, 1, 1);
+    dim3 featureBlockDim(BLOCK_SIZE * BLOCK_SIZE, 1, 1);
     dim3 featureGridDim((int)ceil((float)featureCount / featureBlockDim.x), 1, 1);
 
     // == Repeated Frame LK Procedure ==
 
-    for (int i = 1; i < video.frames.size(); i++) {
+    for (int i = 1; i < video.frames.size(); i++)
+    {
         // Switch Frames
         cudaMemcpy(devicePrevFrame, deviceFrame, size, cudaMemcpyDeviceToDevice);
         cudaMemcpy(deviceFrame, video.frames[i].data, size, cudaMemcpyHostToDevice);
@@ -308,15 +317,20 @@ sparseLucasKanadeGPU(VideoInfo &video)
         cudaDeviceSynchronize();
 
         // Obtain Lucas Kanade Solve on 1 dimensional grid/block array
-        lucasKanadeSolver<<<featureGridDim, featureBlockDim>>>(deviceFlowVectors, deviceIx, deviceIy, deviceIt, deviceFrameFeatures, deviceFrameFeatureCount, width, height);
-        updateTrackingPoints<<<featureGridDim, featureBlockDim>>>(deviceFrameFeatures, deviceFrameFeatureCount, deviceFlowVectors, width, height);
+        lucasKanadeSolver<<<featureGridDim, featureBlockDim>>>(deviceFlowVectors, deviceIx, deviceIy, deviceIt,
+                                                               deviceFrameFeatures, deviceFrameFeatureCount, width,
+                                                               height);
+        updateTrackingPoints<<<featureGridDim, featureBlockDim>>>(deviceFrameFeatures, deviceFrameFeatureCount,
+                                                                  deviceFlowVectors, width, height);
         cudaDeviceSynchronize();
 
         cudaMemcpy(frameFeatures, deviceFrameFeatures, featureCount * sizeof(float3), cudaMemcpyDeviceToHost);
 
         cv::Mat output;
         cvtColor(video.frames[i], output, cv::COLOR_GRAY2BGR);
-        drawOpticalFlowGPU(output, mask, reinterpret_cast<cv::Vec3f*>(prevFrameFeatures), reinterpret_cast<cv::Vec3f*>(frameFeatures), featureCount, pt_colors, DRAW_CONTINUOUS_LINES);
+        drawOpticalFlowGPU(output, mask, reinterpret_cast<cv::Vec3f *>(prevFrameFeatures),
+                           reinterpret_cast<cv::Vec3f *>(frameFeatures), featureCount, pt_colors,
+                           DRAW_CONTINUOUS_LINES);
 
         std::memcpy(prevFrameFeatures, frameFeatures, featureCount * sizeof(float3));
         video.outputFrames.push_back(output);
