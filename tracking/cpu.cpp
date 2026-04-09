@@ -22,11 +22,9 @@ sparseLucasKanadeCPU(VideoInfo &video)
     vector<Point2f> p0, p1;
 
     double qualityLevel = 0.01;
-    double minDistance = 10;
     int blockSize = 3;
     bool useHarris = true;
-    double k = 0.04;
-    goodFeaturesToTrack(old_frame, p0, MAX_FEATURES, qualityLevel, minDistance, Mat(), blockSize, useHarris, k);
+    goodFeaturesToTrack(old_frame, p0, MAX_FEATURES, qualityLevel, HARRIS_DISTANCE, Mat(), blockSize, useHarris, HARRIS_EPSILON);
 
     int initialFeatures = p0.size();
 
@@ -40,7 +38,7 @@ sparseLucasKanadeCPU(VideoInfo &video)
 
         vector<uchar> status;
         vector<float> err;
-        TermCriteria criteria = TermCriteria((TermCriteria::COUNT) + (TermCriteria::EPS), 10, 0.03);
+        TermCriteria criteria = TermCriteria((TermCriteria::COUNT) + (TermCriteria::EPS), MAX_LK_ITERATIONS, LK_EPSILON);
         calcOpticalFlowPyrLK(old_frame, frame, p0, p1, status, err, Size(15, 15), 2, criteria);
 
         drawOpticalFlow(output, mask, p0, p1, status, pt_colors, DRAW_CONTINUOUS_LINES);

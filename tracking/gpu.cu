@@ -8,7 +8,30 @@
 #include <stdio.h>
 
 #define BLOCK_SIZE 16
-#define HARRIS_EPSILON 0.04
+
+__device__ float
+bilinearInterpolate(unsigned char *img, float x, float y, int width, int height)
+{
+    int x1 = (int) floor(x);
+    int x2 = (int) ceil(x);
+    int y1 = (int) floor(y);
+    int y2 = (int) ceil(y);
+
+    x1 = max(0, min(x1, width - 1));
+    x2 = max(0, min(x2, width - 1));
+    y1 = max(0, min(y1, height - 1));
+    y2 = max(0, min(y2, height - 1));
+
+    float q11 = (float) img[x1 + (y1 * width)];
+    float q12 = (float) img[x1 + (y2 * width)];
+    float q21 = (float) img[x2 + (y1 * width)];
+    float q22 = (float) img[x2 + (y2 * width)];
+
+    float dx = x - float(x1);
+    float dy = y - float(y1);
+
+    return (1.0 - dx)*(1.0 - dy)*q11 + (1.0 - dx)*(dy)*q12 + (dx)*(1.0 - dy)*q21 + (dx)*(dy)*q22;
+}
 
 __global__ void
 sobelFilter(float *ix, float *iy, unsigned char *frame, int width, int height)
@@ -99,10 +122,10 @@ harrisThresholder(float3 *features, int *featureCount, float *response, float th
         return;
     }
 
-    // NMS, 20x20 window
-    for (int yShift = -10; yShift <= 10; yShift++)
+    // Non-Max Suppression
+    for (int yShift = -HARRIS_DISTANCE; yShift <= HARRIS_DISTANCE; yShift++)
     {
-        for (int xShift = -10; xShift <= 10; xShift++)
+        for (int xShift = -HARRIS_DISTANCE; xShift <= HARRIS_DISTANCE; xShift++)
         {
             if (yShift == 0 && xShift == 0)
             {
@@ -126,6 +149,94 @@ harrisThresholder(float3 *features, int *featureCount, float *response, float th
         features[featureSlot].y = y;
         features[featureSlot].z = 1;
     }
+}
+
+__global__ void
+iterLucasKanadeSolver(float2 *flowVectors, float *ix, float *iy, unsigned char *frame, unsigned char *prevFrame, float3 *features, int *featureCount, int width, int height)
+{
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i >= *featureCount || features[i].z != 1)
+    {
+        return;
+    }
+
+    int centerX = features[i].x;
+    int centerY = features[i].y;
+
+    float u, v = 0.0f;
+
+    float sumIxx = 0;
+    float sumIyy = 0;
+    float sumIxy = 0;
+
+    // 15x15 window, just like in the CPU version
+    int windowHalf = 7;
+
+    for (int y = -windowHalf; y <= windowHalf; y++)
+    {
+        for (int x = -windowHalf; x <= windowHalf; x++)
+        {
+            if ((centerX + x) < 0 || (centerX + x) >= width || (centerY + y) < 0 || (centerY + y) >= height)
+            {
+                continue;
+            }
+            int currentCoord = ((centerY + y) * width) + (centerX + x);
+            sumIxx += ix[currentCoord] * ix[currentCoord];
+            sumIyy += iy[currentCoord] * iy[currentCoord];
+            sumIxy += ix[currentCoord] * iy[currentCoord];
+        }
+    }
+
+    float det = sumIxx * sumIyy - (sumIxy * sumIxy);
+    if (fabs(det) < 1e-6)
+    {
+        features[i].z = 0;
+        return;
+    }
+
+    for (int iteration = 0; iteration < MAX_LK_ITERATIONS; iteration++)
+    {
+        float sumIxt = 0;
+        float sumIyt = 0;
+        for (int y = -windowHalf; y <= windowHalf; y++)
+        {
+            for (int x = -windowHalf; x <= windowHalf; x++)
+            {
+                int iterCenterX = centerX + x;
+                int iterCenterY = centerY + y;
+
+                float warpedCenterX = (float) iterCenterX + u;
+                float warpedCenterY = (float) iterCenterY + v;
+
+                if (warpedCenterX < 0 || warpedCenterX > width || warpedCenterY < 0 || warpedCenterY > height)
+                {
+                    features[i].z = 0;
+                    return;
+                }
+
+                float frameInterp = bilinearInterpolate(frame, warpedCenterX, warpedCenterY, width, height);
+                float prevFrameInterp = (float) prevFrame[iterCenterY * width + iterCenterX];
+                float it = frameInterp - prevFrameInterp;
+
+                sumIxt += ix[iterCenterY * width + iterCenterX] * it;
+                sumIyt += iy[iterCenterY * width + iterCenterX] * it;
+            }
+        }
+
+        float du = ((sumIyy * -sumIxt) + (-sumIxy * -sumIyt)) / det;
+        float dv = ((-sumIxy * -sumIxt) + (sumIxx * -sumIyt)) / det;
+
+        u += du;
+        v += dv;
+
+        if (du*du + dv*dv < LK_EPSILON)
+        {
+            break;
+        }
+    }
+
+    flowVectors[i].x = u;
+    flowVectors[i].y = v;
 }
 
 __global__ void
@@ -293,7 +404,8 @@ sparseLucasKanadeGPU(VideoInfo &video)
     int featureCount = 0;
     cudaMemcpy(&featureCount, deviceFrameFeatureCount, sizeof(int), cudaMemcpyDeviceToHost);
     /**
-     * Below line is needed to prevent CUDA from accessing bad memory, otherwise we'll have no results
+     * Below line is needed to prevent CUDA from accessing bad memory, otherwise we'll have no results.
+     * Segfaults seem to be... silent? When we exceeded this, every single status was turning into 1.
      */
     featureCount = min(featureCount, MAX_FEATURES);
     float3 *prevFrameFeatures = (float3 *)calloc(featureCount, sizeof(float3));
@@ -313,12 +425,12 @@ sparseLucasKanadeGPU(VideoInfo &video)
         cudaMemcpy(deviceFrame, video.frames[i].data, size, cudaMemcpyHostToDevice);
 
         // Do Sobel & Temporal Difference
-        sobelFilter<<<gridDim, blockDim>>>(deviceIx, deviceIy, deviceFrame, width, height);
-        temporalDifference<<<gridDim, blockDim>>>(deviceIt, devicePrevFrame, deviceFrame, width, height);
+        sobelFilter<<<gridDim, blockDim>>>(deviceIx, deviceIy, devicePrevFrame, width, height);
+        // temporalDifference<<<gridDim, blockDim>>>(deviceIt, devicePrevFrame, deviceFrame, width, height);
         cudaDeviceSynchronize();
 
         // Obtain Lucas Kanade Solve on 1 dimensional grid/block array
-        lucasKanadeSolver<<<featureGridDim, featureBlockDim>>>(deviceFlowVectors, deviceIx, deviceIy, deviceIt,
+        iterLucasKanadeSolver<<<featureGridDim, featureBlockDim>>>(deviceFlowVectors, deviceIx, deviceIy, deviceFrame, devicePrevFrame,
                                                                deviceFrameFeatures, deviceFrameFeatureCount, width,
                                                                height);
         updateTrackingPoints<<<featureGridDim, featureBlockDim>>>(deviceFrameFeatures, deviceFrameFeatureCount,
@@ -338,13 +450,6 @@ sparseLucasKanadeGPU(VideoInfo &video)
 
         // TODO: Gaussian Weighted Average
         // 2:00 - https://www.youtube.com/watch?v=79Ty2Kkivvc
-        // TODO: Iterative Refinement
-        // 2:16 - https://www.youtube.com/watch?v=79Ty2Kkivvc
-        // - Make cumulative flow values u and v
-        // - Loop over the sumIxx parts for a certain number of iterations
-        // - Grab the sum of points
-        // - Recalculate the temporal derivative from the first image (bilinear)
-        // - Calculate du, dv, add them to u and v, then break if we're decently converging
         // TODO: Coarse-To-Fine
         // 2:55 - https://www.youtube.com/watch?v=79Ty2Kkivvc
         // TODO: If Features get low, then recalculate them.
@@ -352,6 +457,13 @@ sparseLucasKanadeGPU(VideoInfo &video)
         // TODO: consider dense might be faster and possibly more parallelizable???
         // - Every feature in DLK is just... every pixel... and it's the same.
         // - Then we just change how we display the output to be like a heatmap or smth
+
+        /**
+         * Possible Optimizations To Consider
+         * - Shared Memory
+         * - Texture Memory
+         * - 1 Kernel, calculating certain steps on the fly with device specific functions
+         */
     }
 
     // === Memory Freeing Procedure ===
