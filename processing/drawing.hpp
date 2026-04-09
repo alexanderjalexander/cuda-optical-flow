@@ -6,28 +6,25 @@
 
 #include <vector>
 
-using namespace cv;
-using namespace std;
-
-vector<Scalar> getRandomColors(int num);
+std::vector<cv::Scalar> getRandomColors(int num);
 
 void drawOpticalFlow(
-    Mat &output,
-    Mat &mask,
-    const vector<Point2f> &p0,
-    const vector<Point2f> &p1,
-    const vector<uchar> &status,
-    const vector<Scalar>& colors,
+    cv::Mat &output,
+    cv::Mat &mask,
+    const std::vector<cv::Point2f> &p0,
+    const std::vector<cv::Point2f> &p1,
+    const std::vector<uchar> &status,
+    const std::vector<cv::Scalar>& colors,
     bool drawContinuous
 );
 
 void drawOpticalFlowGPU(
-    Mat &output,
-    Mat &mask,
-    Vec3f *prevFeatures,
-    Vec3f *features,
+    cv::Mat &output,
+    cv::Mat &mask,
+    cv::Vec3f *prevFeatures,
+    cv::Vec3f *features,
     int featureCount,
-    const vector<Scalar>& colors,
+    const std::vector<cv::Scalar>& colors,
     bool drawContinuous
 );
 

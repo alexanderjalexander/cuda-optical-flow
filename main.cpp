@@ -1,5 +1,7 @@
 #include <opencv2/opencv.hpp>
 
+#include <sys/stat.h>
+
 #include <cstdlib>
 #include <filesystem>
 #include <iostream>
@@ -13,11 +15,16 @@
 #include "timing/stopwatch.hpp"
 #include "processing/video_io.hpp"
 
+static void
+usage(const char* progname)
+{
+    printf("Usage: %s\n", progname);
+}
+
 int
 main(int argc, char *argv[])
 {
     // Reading the videos
-
     std::filesystem::path current_dir = std::filesystem::current_path();
     std::string file_input = "Slow-Traffic";
     std::filesystem::path full_path = current_dir / "inputs" / (file_input + ".mp4");

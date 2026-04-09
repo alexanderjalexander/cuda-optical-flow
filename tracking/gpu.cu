@@ -1,3 +1,6 @@
+#include <thrust/device_ptr.h>
+#include <thrust/extrema.h>
+
 #include <stdio.h>
 
 #include "../processing/drawing.hpp"
@@ -5,7 +8,7 @@
 #include "lucasKanade.hpp"
 
 #define BLOCK_SIZE 16
-#define EPSILON 0.04
+#define HARRIS_EPSILON 0.04
 
 __global__ void
 sobelFilter(float *ix, float *iy, unsigned char *frame, int width, int height)
@@ -57,6 +60,8 @@ harrisResponse(float *response, float *ix, float *iy, int width, int height)
     float sumIxy = 0;
 
     // Creating the sum matrices for each pixel
+    // TODO: Gaussian Weights??
+    // goodFeaturesToTrack does so, maybe this will reduce false positives :shrug:
     for (int dy = -2; dy <= 2; dy++)
     {
         for (int dx = -2; dx <= 2; dx++)
@@ -72,14 +77,12 @@ harrisResponse(float *response, float *ix, float *iy, int width, int height)
     // Getting the corner response needed for this.
     float det = (sumIxx * sumIyy) - (sumIxy * sumIxy);
     float trace = (sumIxx + sumIyy);
-    response[y * width + x] = det - (EPSILON * trace * trace);
+    response[y * width + x] = det - (HARRIS_EPSILON * trace * trace);
 }
 
 __global__ void
-harrisThresholder(float3 *features, int *featureCount, float *response, int maxFeatures, int width, int height)
+harrisThresholder(float3 *features, int *featureCount, float *response, float threshold, int maxFeatures, int width, int height)
 {
-    // TODO: Figure out either here, or in the response, why we get points in places with bad edges (skies)
-
     int x = threadIdx.x + blockIdx.x * blockDim.x;
     int y = threadIdx.y + blockIdx.y * blockDim.y;
 
@@ -89,6 +92,11 @@ harrisThresholder(float3 *features, int *featureCount, float *response, int maxF
     }
 
     float r = response[y * width + x];
+
+    if (r < threshold)
+    {
+        return;
+    }
 
     // NMS, 20x20 window
     for (int yShift = -10; yShift <= 10; yShift++)
@@ -199,7 +207,9 @@ sparseLucasKanadeGPU(VideoInfo &video)
     int size = width * height * sizeof(unsigned char);
 
     // For coloring the output
-    Mat mask = Mat::zeros(video.frames[0].size(), CV_8UC3);
+    cv::Mat mask = cv::Mat::zeros(video.frames[0].size(), CV_8UC3);
+
+    // === Pointer Declaration ===
 
     unsigned char *deviceFrame = NULL;
     unsigned char *devicePrevFrame = NULL;
@@ -213,6 +223,8 @@ sparseLucasKanadeGPU(VideoInfo &video)
     int *deviceFrameFeatureCount = NULL;
     float *deviceResponse = NULL;
 
+    // === Pointer Memory Allocation ===
+
     cudaMalloc(&deviceFrame, width * height * sizeof(unsigned char));
     cudaMalloc(&devicePrevFrame, width * height * sizeof(unsigned char));
 
@@ -224,6 +236,8 @@ sparseLucasKanadeGPU(VideoInfo &video)
     cudaMalloc(&deviceFlowVectors, MAX_FEATURES * sizeof(float2));
     cudaMalloc(&deviceFrameFeatureCount, sizeof(int));
     cudaMalloc(&deviceResponse, width * height * sizeof(float));
+
+    // === Pointer Memory Copying & Zeroing ===
 
     cudaMemcpy(deviceFrame, video.frames[0].data, size, cudaMemcpyHostToDevice);
     cudaMemcpy(devicePrevFrame, video.frames[1].data, size, cudaMemcpyHostToDevice);
@@ -237,53 +251,75 @@ sparseLucasKanadeGPU(VideoInfo &video)
     cudaMemset(deviceFrameFeatureCount, 0, sizeof(int));
     cudaMemset(deviceResponse, 0, width * height * sizeof(float));
 
+    // === Kernel Blocks & Grids Initialization ===
+
     dim3 blockDim(BLOCK_SIZE, BLOCK_SIZE, 1);
     dim3 gridDim((int)ceil((float)width / blockDim.x), (int)ceil((float)height / blockDim.y), 1);
 
+    // === First Frame Procedure ===
+    // 1. Grab Sobel & Harris Response
+    // 2. Use Thrust Extrema to calculate threshold
+    // 3. Threshold all features
+    // 3. Perform Lucas Kanade Solve on every frame past that
+
+    // == Initial Sobel Filter & Harris Response ==
+
     sobelFilter<<<gridDim, blockDim>>>(deviceIx, deviceIy, deviceFrame, width, height);
     harrisResponse<<<gridDim, blockDim>>>(deviceResponse, deviceIx, deviceIy, width, height);
-    harrisThresholder<<<gridDim, blockDim>>>(deviceFrameFeatures, deviceFrameFeatureCount, deviceResponse, MAX_FEATURES,
+    cudaDeviceSynchronize();
+
+    // == Threshold Calculations w/ Thrust ==
+
+    thrust::device_ptr<float> responsePtr(deviceResponse);
+    float responseMin = *thrust::min_element(responsePtr, responsePtr + (width * height));
+    float responseMax = *thrust::max_element(responsePtr, responsePtr + (width * height));
+    float responseThreshold = responseMin + (0.01f * (responseMax - responseMin));
+
+    harrisThresholder<<<gridDim, blockDim>>>(deviceFrameFeatures, deviceFrameFeatureCount, deviceResponse, responseThreshold, MAX_FEATURES,
                                              width, height);
     cudaDeviceSynchronize();
 
+    // == Getting Feature Counts ==
+
     int featureCount = 0;
     cudaMemcpy(&featureCount, deviceFrameFeatureCount, sizeof(int), cudaMemcpyDeviceToHost);
-    // THIS IS ABSOLUTELY CRITICAL
-    // IF WE EVER HAVE A SEGFAULT IN CUDA, IT JUST BORKS THE WHOLE PROGRAM
+    /**
+     * Below line is needed to prevent CUDA from accessing bad memory, otherwise we'll have no results
+     */
     featureCount = min(featureCount, MAX_FEATURES);
-
     float3 *prevFrameFeatures = (float3*) calloc(featureCount, sizeof(float3));
     float3 *frameFeatures = (float3*) calloc(featureCount, sizeof(float3));
     cudaMemcpy(prevFrameFeatures, deviceFrameFeatures, featureCount * sizeof(float3), cudaMemcpyDeviceToHost);
+    std::vector<cv::Scalar> pt_colors = getRandomColors(featureCount);
 
-    vector<Scalar> pt_colors = getRandomColors(featureCount);
+    dim3 featureBlockDim(BLOCK_SIZE*BLOCK_SIZE, 1, 1);
+    dim3 featureGridDim((int)ceil((float)featureCount / featureBlockDim.x), 1, 1);
+
+    // == Repeated Frame LK Procedure ==
 
     for (int i = 1; i < video.frames.size(); i++) {
-        // std::cout << i << endl;
-        // unsigned char* tempPtr = deviceFrame;
+        // Switch Frames
+        cudaMemcpy(devicePrevFrame, deviceFrame, size, cudaMemcpyDeviceToDevice);
         cudaMemcpy(deviceFrame, video.frames[i].data, size, cudaMemcpyHostToDevice);
 
+        // Do Sobel & Temporal Difference
         sobelFilter<<<gridDim, blockDim>>>(deviceIx, deviceIy, deviceFrame, width, height);
         temporalDifference<<<gridDim, blockDim>>>(deviceIt, devicePrevFrame, deviceFrame, width, height);
         cudaDeviceSynchronize();
 
-        dim3 featureBlockDim(BLOCK_SIZE*BLOCK_SIZE, 1, 1);
-        dim3 featureGridDim((int)ceil((float)featureCount / featureBlockDim.x), 1, 1);
-
+        // Obtain Lucas Kanade Solve on 1 dimensional grid/block array
         lucasKanadeSolver<<<featureGridDim, featureBlockDim>>>(deviceFlowVectors, deviceIx, deviceIy, deviceIt, deviceFrameFeatures, deviceFrameFeatureCount, width, height);
         updateTrackingPoints<<<featureGridDim, featureBlockDim>>>(deviceFrameFeatures, deviceFrameFeatureCount, deviceFlowVectors, width, height);
         cudaDeviceSynchronize();
 
         cudaMemcpy(frameFeatures, deviceFrameFeatures, featureCount * sizeof(float3), cudaMemcpyDeviceToHost);
 
-        Mat output;
-        cvtColor(video.frames[i], output, COLOR_GRAY2BGR);
+        cv::Mat output;
+        cvtColor(video.frames[i], output, cv::COLOR_GRAY2BGR);
         drawOpticalFlowGPU(output, mask, reinterpret_cast<cv::Vec3f*>(prevFrameFeatures), reinterpret_cast<cv::Vec3f*>(frameFeatures), featureCount, pt_colors, DRAW_CONTINUOUS_LINES);
 
         std::memcpy(prevFrameFeatures, frameFeatures, featureCount * sizeof(float3));
         video.outputFrames.push_back(output);
-
-        cudaMemcpy(devicePrevFrame, deviceFrame, size, cudaMemcpyDeviceToDevice);
 
         // TODO: Gaussian Weighted Average
         // 2:00 - https://www.youtube.com/watch?v=79Ty2Kkivvc
@@ -292,7 +328,13 @@ sparseLucasKanadeGPU(VideoInfo &video)
         // TODO: Coarse-To-Fine
         // 2:55 - https://www.youtube.com/watch?v=79Ty2Kkivvc
         // TODO: If Features get low, then recalculate them.
+
+        // TODO: consider dense might be faster and possibly more parallelizable???
+        // - Every feature in DLK is just... every pixel... and it's the same.
+        // - Then we just change how we display the output to be like a heatmap or smth
     }
+
+    // === Memory Freeing Procedure ===
 
     free(prevFrameFeatures);
     free(frameFeatures);
