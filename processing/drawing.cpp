@@ -1,22 +1,22 @@
 #include "drawing.hpp"
 
-vector<Scalar>
+std::vector<cv::Scalar>
 getRandomColors(int num)
 {
-    RNG rng;
+    cv::RNG rng;
 
-    vector<Scalar> pt_colors;
+    std::vector<cv::Scalar> pt_colors;
     for (size_t i = 0; i < num; i++)
     {
-        pt_colors.push_back(Scalar(rng.uniform(0, 256), rng.uniform(0, 256), rng.uniform(0, 256)));
+        pt_colors.push_back(cv::Scalar(rng.uniform(0, 256), rng.uniform(0, 256), rng.uniform(0, 256)));
     }
 
     return pt_colors;
 }
 
 void
-drawOpticalFlow(Mat &output, Mat &mask, const vector<Point2f> &p0, const vector<Point2f> &p1,
-                const vector<uchar> &status, const vector<Scalar> &colors, bool drawContinuous)
+drawOpticalFlow(cv::Mat &output, cv::Mat &mask, const std::vector<cv::Point2f> &p0, const std::vector<cv::Point2f> &p1,
+                const std::vector<uchar> &status, const std::vector<cv::Scalar> &colors, bool drawContinuous)
 {
     for (uint j = 0; j < p0.size(); j++)
     {
@@ -42,15 +42,15 @@ drawOpticalFlow(Mat &output, Mat &mask, const vector<Point2f> &p0, const vector<
 }
 
 void
-drawOpticalFlowGPU(Mat &output, Mat &mask, Vec3f *prevFeatures, Vec3f *features, int featureCount,
-                   const vector<Scalar> &colors, bool drawContinuous)
+drawOpticalFlowGPU(cv::Mat &output, cv::Mat &mask, cv::Vec3f *prevFeatures, cv::Vec3f *features, int featureCount,
+                   const std::vector<cv::Scalar> &colors, bool drawContinuous)
 {
     for (uint i = 0; i < featureCount; i++)
     {
         if (features[i][2] == 1)
         {
-            Point2f p0(features[i][0], features[i][1]);
-            Point2f p1(features[i][0], features[i][1]);
+            cv::Point2f p0(features[i][0], features[i][1]);
+            cv::Point2f p1(features[i][0], features[i][1]);
 
             if (drawContinuous)
             {
