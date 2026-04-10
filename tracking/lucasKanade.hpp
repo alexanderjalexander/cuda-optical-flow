@@ -19,4 +19,6 @@
 void sparseLucasKanadeCPU(VideoInfo &video);
 void sparseLucasKanadeGPU(VideoInfo &video);
 
+void denseLucasKanadeCPU(VideoInfo &video);
+
 #endif

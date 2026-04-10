@@ -10,7 +10,7 @@
 std::vector<cv::Scalar>
 getRandomColors(int num)
 {
-    cv::RNG rng;
+    cv::RNG rng(67);
 
     std::vector<cv::Scalar> pt_colors;
     for (size_t i = 0; i < num; i++)
@@ -30,13 +30,13 @@ getRandomColors(int num)
  * @param mask The output mask to draw on.
  * @param p0 A vector representing the first frame's 2D point features.
  * @param p1 A vector representing the second frame's 2D point features.
- * @param status The status of the point.
+ * @param status The status of the points.
  * @param colors An array of colors to draw the lines/arrows with.
  * @param drawContinuous Whether to draw a continuous line on the image mask, or to draw an arrow from one point to the
  * next.
  */
 void
-drawOpticalFlow(cv::Mat &output, cv::Mat &mask, const std::vector<cv::Point2f> &p0, const std::vector<cv::Point2f> &p1,
+drawSparseOpticalFlow(cv::Mat &output, cv::Mat &mask, const std::vector<cv::Point2f> &p0, const std::vector<cv::Point2f> &p1,
                 const std::vector<uchar> &status, const std::vector<cv::Scalar> &colors, bool drawContinuous)
 {
     for (uint j = 0; j < p0.size(); j++)
@@ -65,6 +65,42 @@ drawOpticalFlow(cv::Mat &output, cv::Mat &mask, const std::vector<cv::Point2f> &
 /**
  * Draws the optical flow result onto the output frames.
  *
+ * For compatibility reasons, use with OpenCV functions and CPU functions only.
+ *
+ * @param output The output frame.
+ * @param p0 A vector representing the first frame's 2D point features.
+ * @param p1 A vector representing the second frame's 2D point features.
+ * @param status The status of the points.
+ */
+void drawDenseOpticalFlow(cv::Mat &output, const std::vector<cv::Point2f> &p0, const std::vector<cv::Point2f> &p1,
+                    const std::vector<uchar> &status)
+{
+    for (size_t i = 0; i < p0.size(); i++)
+    {
+        if (status[i] == 1)
+        {
+            float dx = p1[i].x - p0[i].x;
+            float dy = p1[i].y - p0[i].y;
+
+            float magnitude = std::sqrtf(dx*dx + dy*dy);
+            float angle = std::atan2f(dy, dx);
+
+            float hue = angle * (180.0f / CV_PI) / 2.0f;
+
+            float val = std::min(magnitude * 10.0f, 255.0f);
+
+            cv::Mat hsv(1, 1, CV_8UC3, cv::Scalar(hue, 255, val));
+            cv::Mat bgr;
+            cv::cvtColor(hsv, bgr, cv::COLOR_HSV2BGR);
+
+            cv::circle(output, p1[i], 1, bgr.at<cv::Vec3b>(0,0), -1);
+        }
+    }
+}
+
+/**
+ * Draws the optical flow result onto the output frames.
+ *
  * For compatibility reasons, use with GPU CUDA functions only.
  *
  * @param output The output frame.
@@ -77,7 +113,7 @@ drawOpticalFlow(cv::Mat &output, cv::Mat &mask, const std::vector<cv::Point2f> &
  * next.
  */
 void
-drawOpticalFlowGPU(cv::Mat &output, cv::Mat &mask, cv::Vec3f *prevFeatures, cv::Vec3f *features, int featureCount,
+drawSparseOpticalFlowGPU(cv::Mat &output, cv::Mat &mask, cv::Vec3f *prevFeatures, cv::Vec3f *features, int featureCount,
                    const std::vector<cv::Scalar> &colors, bool drawContinuous)
 {
     for (uint i = 0; i < featureCount; i++)

@@ -8,7 +8,7 @@
 
 std::vector<cv::Scalar> getRandomColors(int num);
 
-void drawOpticalFlow(
+void drawSparseOpticalFlow(
     cv::Mat &output,
     cv::Mat &mask,
     const std::vector<cv::Point2f> &p0,
@@ -18,7 +18,14 @@ void drawOpticalFlow(
     bool drawContinuous
 );
 
-void drawOpticalFlowGPU(
+void drawDenseOpticalFlow(
+    cv::Mat &output,
+    const std::vector<cv::Point2f> &p0,
+    const std::vector<cv::Point2f> &p1,
+    const std::vector<uchar> &status
+);
+
+void drawSparseOpticalFlowGPU(
     cv::Mat &output,
     cv::Mat &mask,
     cv::Vec3f *prevFeatures,
