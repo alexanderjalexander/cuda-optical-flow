@@ -1,5 +1,12 @@
 #include "drawing.hpp"
 
+/**
+ * Makes a size-specified, random array of colors.
+ *
+ * @param num The number of colors to generate.
+ *
+ * @returns A vector of Scalar values, representing a random color in RGB format.
+ */
 std::vector<cv::Scalar>
 getRandomColors(int num)
 {
@@ -14,6 +21,20 @@ getRandomColors(int num)
     return pt_colors;
 }
 
+/**
+ * Draws the optical flow result onto the output frames.
+ *
+ * For compatibility reasons, use with OpenCV functions and CPU functions only.
+ *
+ * @param output The output frame.
+ * @param mask The output mask to draw on.
+ * @param p0 A vector representing the first frame's 2D point features.
+ * @param p1 A vector representing the second frame's 2D point features.
+ * @param status The status of the point.
+ * @param colors An array of colors to draw the lines/arrows with.
+ * @param drawContinuous Whether to draw a continuous line on the image mask, or to draw an arrow from one point to the
+ * next.
+ */
 void
 drawOpticalFlow(cv::Mat &output, cv::Mat &mask, const std::vector<cv::Point2f> &p0, const std::vector<cv::Point2f> &p1,
                 const std::vector<uchar> &status, const std::vector<cv::Scalar> &colors, bool drawContinuous)
@@ -41,6 +62,20 @@ drawOpticalFlow(cv::Mat &output, cv::Mat &mask, const std::vector<cv::Point2f> &
     }
 }
 
+/**
+ * Draws the optical flow result onto the output frames.
+ *
+ * For compatibility reasons, use with GPU CUDA functions only.
+ *
+ * @param output The output frame.
+ * @param mask The output mask to draw on.
+ * @param prevFeatures A vector representing the first frame's 2D point features, with an additional status field.
+ * @param features A vector representing the second frame's 2D point features, with an additional status field.
+ * @param featureCount The number of features we have in total.
+ * @param colors An array of colors to draw the lines/arrows with.
+ * @param drawContinuous Whether to draw a continuous line on the image mask, or to draw an arrow from one point to the
+ * next.
+ */
 void
 drawOpticalFlowGPU(cv::Mat &output, cv::Mat &mask, cv::Vec3f *prevFeatures, cv::Vec3f *features, int featureCount,
                    const std::vector<cv::Scalar> &colors, bool drawContinuous)

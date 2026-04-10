@@ -1,5 +1,16 @@
 #include "video_io.hpp"
 
+/**
+ * Reads a video from the filesystem and stores the video and relevant info
+ * into a struct.
+ *
+ * Converts the video to grayscale.
+ *
+ * @param video the VideoInfo struct to store the initial video's frames.
+ * @param video_path the path to the video on the filesystem.
+ *
+ * @return EXIT_SUCCESS or EXIT_FAILURE, depending on the result of the read.
+ */
 int
 readVideo(VideoInfo &video, std::filesystem::path video_path)
 {
@@ -37,6 +48,15 @@ readVideo(VideoInfo &video, std::filesystem::path video_path)
     return EXIT_SUCCESS;
 }
 
+/**
+ * Reads a video from the corresponding struct and writes the output buffer frames
+ * to an MP4 file on the system.
+ *
+ * @param video the VideoInfo struct storing the initial video's frames.
+ * @param video_path the path to write the output video to on the filesystem.
+ *
+ * @return EXIT_SUCCESS or EXIT_FAILURE, depending on the result of the write.
+ */
 int
 writeVideo(VideoInfo &video, std::filesystem::path video_path)
 {
@@ -80,6 +100,14 @@ writeVideo(VideoInfo &video, std::filesystem::path video_path)
     return EXIT_SUCCESS;
 }
 
+/**
+ * Copies a video from one struct to the next.
+ *
+ * @param dstVideo the VideoInfo struct to copy to.
+ * @param srcVideo the VideoInfo struct to copy from.
+ *
+ * @return EXIT_SUCCESS
+ */
 int
 copyVideo(VideoInfo &dstVideo, VideoInfo &srcVideo)
 {

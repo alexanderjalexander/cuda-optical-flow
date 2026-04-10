@@ -7,6 +7,17 @@
 using namespace cv;
 using namespace std;
 
+/**
+ * Host code that initiates a full flow of Sparse Lucas Kanade on the CPU.
+ *
+ * At first, this will calculate possibly good features using OpenCV's
+ * goodFeaturesToTrack, using a Harris detector. Then, it will perform Lucas
+ * Kanade flow calculations per each pair of frames, draw the flow result on the
+ * result frames, and then continue until there are no more frames left to calculate
+ * Lucas Kanade optical flow on.
+ *
+ * @param video the VideoInfo struct storing the initial frame's videos.
+ */
 void
 sparseLucasKanadeCPU(VideoInfo &video)
 {
@@ -38,8 +49,7 @@ sparseLucasKanadeCPU(VideoInfo &video)
 
         vector<uchar> status;
         vector<float> err;
-        TermCriteria criteria =
-            TermCriteria((TermCriteria::COUNT) + (TermCriteria::EPS), LK_ITERATIONS, LK_EPSILON);
+        TermCriteria criteria = TermCriteria((TermCriteria::COUNT) + (TermCriteria::EPS), LK_ITERATIONS, LK_EPSILON);
         calcOpticalFlowPyrLK(old_frame, frame, p0, p1, status, err, Size(15, 15), 2, criteria);
 
         drawOpticalFlow(output, mask, p0, p1, status, pt_colors, DRAW_CONTINUOUS_LINES);

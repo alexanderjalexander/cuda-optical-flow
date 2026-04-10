@@ -9,6 +9,17 @@
 
 #define BLOCK_SIZE 16
 
+/**
+ * Device-only code to get the bilinear interpolation of a point in an image.
+ *
+ * @param img The image to interpolate against.
+ * @param x The desired x coordinate.
+ * @param y The desired y coordinate.
+ * @param width The image `img`'s width.
+ * @param height The image `img`'s height.
+ *
+ * @returns A floating point value representing the interpolated intensity.
+ */
 __device__ float
 bilinearInterpolate(unsigned char *img, float x, float y, int width, int height)
 {
@@ -33,6 +44,17 @@ bilinearInterpolate(unsigned char *img, float x, float y, int width, int height)
     return (1.0 - dx) * (1.0 - dy) * q11 + (1.0 - dx) * (dy)*q12 + (dx) * (1.0 - dy) * q21 + (dx) * (dy)*q22;
 }
 
+/**
+ * Kernel code to obtain the horizontal and vertical Sobel derivatives of an image.
+ *
+ * Results are normalized by dividing the final result by 8.
+ *
+ * @param ix Device memory to store Ix, the horizontal derivative.
+ * @param iy Device memory to store Iy, the vertical derivative.
+ * @param frame The 8-bit, grayscale image to calculate the sobel derivative on.
+ * @param width The image's width.
+ * @param height The image's height.
+ */
 __global__ void
 sobelFilter(float *ix, float *iy, unsigned char *frame, int width, int height)
 {
@@ -55,6 +77,15 @@ sobelFilter(float *ix, float *iy, unsigned char *frame, int width, int height)
     }
 }
 
+/**
+ * Kernel code to obtain the temporal difference between two images.
+ *
+ * @param it Device memory to store It, the temporal derivative.
+ * @param prevFrame The 8-bit, grayscale image to calculate the sobel derivative on.
+ * @param frame The 8-bit, grayscale image to calculate the sobel derivative on.
+ * @param width The image's width.
+ * @param height The image's height.
+ */
 __global__ void
 temporalDifference(float *it, unsigned char *prevFrame, unsigned char *frame, int width, int height)
 {
@@ -67,6 +98,15 @@ temporalDifference(float *it, unsigned char *prevFrame, unsigned char *frame, in
     }
 }
 
+/**
+ * Kernel code to obtain an image's Harris Response given the sobel derivatives.
+ *
+ * @param response Device memory to store the initial Harris response.
+ * @param ix Device memory to store Ix, the horizontal derivative.
+ * @param iy Device memory to store Iy, the vertical derivative.
+ * @param width The image's width.
+ * @param height The image's height.
+ */
 __global__ void
 harrisResponse(float *response, float *ix, float *iy, int width, int height)
 {
@@ -103,6 +143,19 @@ harrisResponse(float *response, float *ix, float *iy, int width, int height)
     response[y * width + x] = det - (HARRIS_EPSILON * trace * trace);
 }
 
+/**
+ * Kernel code to threshold an image's Harris Response, in order to obtain
+ * the final feature set.
+ *
+ * @param features The device memory storing all the features we wish to track.
+ * @param featureCount How many features we're attempting to store.
+ * @param response Device memory storing the initial Harris response.
+ * @param threshold A float representing (R_max * QUALITY_LEVEL), where R_Max
+ * is the maximum Response in the entire image.
+ * @param maxFeatures The maximum features we're limiting this program to be able to run.
+ * @param width The image's width.
+ * @param height The image's height.
+ */
 __global__ void
 harrisThresholder(float3 *features, int *featureCount, float *response, float threshold, int maxFeatures, int width,
                   int height)
@@ -151,6 +204,20 @@ harrisThresholder(float3 *features, int *featureCount, float *response, float th
     }
 }
 
+/**
+ * Kernel code to perform iterative Lucas Kanade on the features given between two
+ * images.
+ *
+ * @param flowVectors The flow directions we're attempting to store and run back.
+ * @param ix Device memory storing Ix, the horizontal derivative.
+ * @param iy Device memory storing Iy, the vertical derivative.
+ * @param frame Global memory storing the original frame.
+ * @param prevFrame Global memory storing the previous frame.
+ * @param features The device memory storing all the features we wish to track.
+ * @param featureCount How many features we have in actuality.
+ * @param width The image's width.
+ * @param height The image's height.
+ */
 __global__ void
 iterLucasKanadeSolver(float2 *flowVectors, float *ix, float *iy, unsigned char *frame, unsigned char *prevFrame,
                       float3 *features, int *featureCount, int width, int height)
@@ -163,8 +230,8 @@ iterLucasKanadeSolver(float2 *flowVectors, float *ix, float *iy, unsigned char *
 
     flowVectors[i] = {0.0f, 0.0f};
 
-    int centerX = (int) features[i].x;
-    int centerY = (int) features[i].y;
+    int centerX = (int)features[i].x;
+    int centerY = (int)features[i].y;
 
     float u = 0.0f;
     float v = 0.0f;
@@ -236,6 +303,18 @@ iterLucasKanadeSolver(float2 *flowVectors, float *ix, float *iy, unsigned char *
     flowVectors[i].y = v;
 }
 
+/**
+ * Kernel code to perform primitive Lucas Kanade on the features given between two images.
+ *
+ * @param flowVectors The flow directions we're attempting to store and run back.
+ * @param ix Device memory storing Ix, the horizontal derivative.
+ * @param iy Device memory storing Iy, the vertical derivative.
+ * @param it Device memory storing It, the temporal derivative.
+ * @param features The device memory storing all the features we wish to track.
+ * @param featureCount How many features we have in actuality.
+ * @param width The image's width.
+ * @param height The image's height.
+ */
 __global__ void
 lucasKanadeSolver(float2 *flowVectors, float *ix, float *iy, float *it, float3 *features, int *featureCount, int width,
                   int height)
@@ -288,6 +367,16 @@ lucasKanadeSolver(float2 *flowVectors, float *ix, float *iy, float *it, float3 *
     flowVectors[i].y = ((-sumIxy * -sumIxt) + (sumIxx * -sumIyt)) / det;
 }
 
+/**
+ * Kernel code to update the tracking points after an full Lucas Kanade run between
+ * two images.
+ *
+ * @param features The device memory storing all the features we wish to track.
+ * @param featureCount How many features we have in actuality.
+ * @param flowVectors The flow directions we're attempting to store and run back.
+ * @param width The image's width.
+ * @param height The image's height.
+ */
 __global__ void
 updateTrackingPoints(float3 *features, int *featureCount, float2 *flowVectors, int width, int height)
 {
@@ -310,6 +399,18 @@ updateTrackingPoints(float3 *features, int *featureCount, float2 *flowVectors, i
     features[i].y = updatedY;
 }
 
+/**
+ * Host code that initiates a full flow of Sparse Lucas Kanade on the GPU.
+ *
+ * At first, this will calculate possibly good features, very similar to OpenCV's
+ * goodFeaturesToTrack (more specifically, using a Harris Response with the same
+ * parameters as the CPU variant in this codebase). Then, it will perform Lucas
+ * Kanade flow calculations per each frame pair, draw the frames results, and
+ * continue onwards. It will do this until there are no more frames left to
+ * calculate for Lucas Kanade optical flow.
+ *
+ * @param video the VideoInfo struct storing the initial frame's videos.
+ */
 void
 sparseLucasKanadeGPU(VideoInfo &video)
 {
