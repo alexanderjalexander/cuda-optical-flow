@@ -12,25 +12,25 @@
 __device__ float
 bilinearInterpolate(unsigned char *img, float x, float y, int width, int height)
 {
-    int x1 = (int) floor(x);
-    int x2 = (int) ceil(x);
-    int y1 = (int) floor(y);
-    int y2 = (int) ceil(y);
+    int x1 = (int)floor(x);
+    int x2 = (int)ceil(x);
+    int y1 = (int)floor(y);
+    int y2 = (int)ceil(y);
 
     x1 = max(0, min(x1, width - 1));
     x2 = max(0, min(x2, width - 1));
     y1 = max(0, min(y1, height - 1));
     y2 = max(0, min(y2, height - 1));
 
-    float q11 = (float) img[x1 + (y1 * width)];
-    float q12 = (float) img[x1 + (y2 * width)];
-    float q21 = (float) img[x2 + (y1 * width)];
-    float q22 = (float) img[x2 + (y2 * width)];
+    float q11 = (float)img[x1 + (y1 * width)];
+    float q12 = (float)img[x1 + (y2 * width)];
+    float q21 = (float)img[x2 + (y1 * width)];
+    float q22 = (float)img[x2 + (y2 * width)];
 
     float dx = x - float(x1);
     float dy = y - float(y1);
 
-    return (1.0 - dx)*(1.0 - dy)*q11 + (1.0 - dx)*(dy)*q12 + (dx)*(1.0 - dy)*q21 + (dx)*(dy)*q22;
+    return (1.0 - dx) * (1.0 - dy) * q11 + (1.0 - dx) * (dy)*q12 + (dx) * (1.0 - dy) * q21 + (dx) * (dy)*q22;
 }
 
 __global__ void
@@ -152,7 +152,8 @@ harrisThresholder(float3 *features, int *featureCount, float *response, float th
 }
 
 __global__ void
-iterLucasKanadeSolver(float2 *flowVectors, float *ix, float *iy, unsigned char *frame, unsigned char *prevFrame, float3 *features, int *featureCount, int width, int height)
+iterLucasKanadeSolver(float2 *flowVectors, float *ix, float *iy, unsigned char *frame, unsigned char *prevFrame,
+                      float3 *features, int *featureCount, int width, int height)
 {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= *featureCount || features[i].z != 1)
@@ -160,44 +161,25 @@ iterLucasKanadeSolver(float2 *flowVectors, float *ix, float *iy, unsigned char *
         return;
     }
 
-    int centerX = features[i].x;
-    int centerY = features[i].y;
+    flowVectors[i] = {0.0f, 0.0f};
 
-    float u, v = 0.0f;
+    int centerX = (int) features[i].x;
+    int centerY = (int) features[i].y;
 
-    float sumIxx = 0;
-    float sumIyy = 0;
-    float sumIxy = 0;
+    float u = 0.0f;
+    float v = 0.0f;
 
     // 15x15 window, just like in the CPU version
     int windowHalf = 7;
 
-    for (int y = -windowHalf; y <= windowHalf; y++)
+    for (int iteration = 0; iteration < LK_ITERATIONS; iteration++)
     {
-        for (int x = -windowHalf; x <= windowHalf; x++)
-        {
-            if ((centerX + x) < 0 || (centerX + x) >= width || (centerY + y) < 0 || (centerY + y) >= height)
-            {
-                continue;
-            }
-            int currentCoord = ((centerY + y) * width) + (centerX + x);
-            sumIxx += ix[currentCoord] * ix[currentCoord];
-            sumIyy += iy[currentCoord] * iy[currentCoord];
-            sumIxy += ix[currentCoord] * iy[currentCoord];
-        }
-    }
+        float sumIxx = 0.0f;
+        float sumIyy = 0.0f;
+        float sumIxy = 0.0f;
+        float sumIxt = 0.0f;
+        float sumIyt = 0.0f;
 
-    float det = sumIxx * sumIyy - (sumIxy * sumIxy);
-    if (fabs(det) < 1e-6)
-    {
-        features[i].z = 0;
-        return;
-    }
-
-    for (int iteration = 0; iteration < MAX_LK_ITERATIONS; iteration++)
-    {
-        float sumIxt = 0;
-        float sumIyt = 0;
         for (int y = -windowHalf; y <= windowHalf; y++)
         {
             for (int x = -windowHalf; x <= windowHalf; x++)
@@ -205,22 +187,37 @@ iterLucasKanadeSolver(float2 *flowVectors, float *ix, float *iy, unsigned char *
                 int iterCenterX = centerX + x;
                 int iterCenterY = centerY + y;
 
-                float warpedCenterX = (float) iterCenterX + u;
-                float warpedCenterY = (float) iterCenterY + v;
-
-                if (warpedCenterX < 0 || warpedCenterX > width || warpedCenterY < 0 || warpedCenterY > height)
+                if (iterCenterX < 0 || iterCenterX >= width || iterCenterY < 0 || iterCenterY >= height)
                 {
-                    features[i].z = 0;
-                    return;
+                    continue;
                 }
 
-                float frameInterp = bilinearInterpolate(frame, warpedCenterX, warpedCenterY, width, height);
-                float prevFrameInterp = (float) prevFrame[iterCenterY * width + iterCenterX];
-                float it = frameInterp - prevFrameInterp;
+                float warpedX = (float)iterCenterX + u;
+                float warpedY = (float)iterCenterY + v;
 
-                sumIxt += ix[iterCenterY * width + iterCenterX] * it;
-                sumIyt += iy[iterCenterY * width + iterCenterX] * it;
+                if (warpedX < 0.0f || warpedX >= (float)width || warpedY < 0.0f || warpedY >= (float)height)
+                {
+                    continue;
+                }
+
+                int currentCoord = iterCenterY * width + iterCenterX;
+                float gx = ix[currentCoord];
+                float gy = iy[currentCoord];
+                float it = bilinearInterpolate(frame, warpedX, warpedY, width, height) - (float)prevFrame[currentCoord];
+
+                sumIxx += gx * gx;
+                sumIyy += gy * gy;
+                sumIxy += gx * gy;
+                sumIxt += gx * it;
+                sumIyt += gy * it;
             }
+        }
+
+        float det = sumIxx * sumIyy - (sumIxy * sumIxy);
+        if (fabs(det) < 1e-6f)
+        {
+            features[i].z = 0;
+            return;
         }
 
         float du = ((sumIyy * -sumIxt) + (-sumIxy * -sumIyt)) / det;
@@ -229,7 +226,7 @@ iterLucasKanadeSolver(float2 *flowVectors, float *ix, float *iy, unsigned char *
         u += du;
         v += dv;
 
-        if (du*du + dv*dv < LK_EPSILON)
+        if (du * du + dv * dv < LK_EPSILON)
         {
             break;
         }
@@ -391,9 +388,8 @@ sparseLucasKanadeGPU(VideoInfo &video)
     // == Threshold Calculations w/ Thrust ==
 
     thrust::device_ptr<float> responsePtr(deviceResponse);
-    float responseMin = *thrust::min_element(responsePtr, responsePtr + (width * height));
     float responseMax = *thrust::max_element(responsePtr, responsePtr + (width * height));
-    float responseThreshold = responseMin + (0.01f * (responseMax - responseMin));
+    float responseThreshold = responseMax * QUALITY_LEVEL;
 
     harrisThresholder<<<gridDim, blockDim>>>(deviceFrameFeatures, deviceFrameFeatureCount, deviceResponse,
                                              responseThreshold, MAX_FEATURES, width, height);
@@ -426,13 +422,12 @@ sparseLucasKanadeGPU(VideoInfo &video)
 
         // Do Sobel & Temporal Difference
         sobelFilter<<<gridDim, blockDim>>>(deviceIx, deviceIy, devicePrevFrame, width, height);
-        // temporalDifference<<<gridDim, blockDim>>>(deviceIt, devicePrevFrame, deviceFrame, width, height);
         cudaDeviceSynchronize();
 
         // Obtain Lucas Kanade Solve on 1 dimensional grid/block array
-        iterLucasKanadeSolver<<<featureGridDim, featureBlockDim>>>(deviceFlowVectors, deviceIx, deviceIy, deviceFrame, devicePrevFrame,
-                                                               deviceFrameFeatures, deviceFrameFeatureCount, width,
-                                                               height);
+        iterLucasKanadeSolver<<<featureGridDim, featureBlockDim>>>(deviceFlowVectors, deviceIx, deviceIy, deviceFrame,
+                                                                   devicePrevFrame, deviceFrameFeatures,
+                                                                   deviceFrameFeatureCount, width, height);
         updateTrackingPoints<<<featureGridDim, featureBlockDim>>>(deviceFrameFeatures, deviceFrameFeatureCount,
                                                                   deviceFlowVectors, width, height);
         cudaDeviceSynchronize();

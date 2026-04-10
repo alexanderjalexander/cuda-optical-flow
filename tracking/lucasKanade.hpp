@@ -6,12 +6,15 @@
 #include "../processing/video_io.hpp"
 
 #define DRAW_CONTINUOUS_LINES true
+
 #define MAX_FEATURES 500
+#define QUALITY_LEVEL 0.01
 
 #define HARRIS_EPSILON 0.04
-#define HARRIS_DISTANCE 10
-#define MAX_LK_ITERATIONS 10
-#define LK_EPSILON 0.03f
+#define HARRIS_DISTANCE 5
+
+#define LK_EPSILON 0.03
+#define LK_ITERATIONS 10
 
 void sparseLucasKanadeCPU(VideoInfo &video);
 void sparseLucasKanadeGPU(VideoInfo &video);
