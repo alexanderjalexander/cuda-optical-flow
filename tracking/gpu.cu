@@ -10,6 +10,107 @@
 #define BLOCK_SIZE 16
 
 /**
+ * Device-only code to collaboratively load a block of data into shared memory, including a halo for convolution
+ * operations. Loads zero if the thread corresponds to a data or halo element outside the original frame. Calls
+ * syncthreads at the end to ensure all threads have finished loading their data before any subsequent operations.
+ *
+ * @param T The type of the data to be loaded.
+ * @param shared  Device shared memory to load the data into, expected to be a 2D array.
+ * @param global Device global memory array containing input data.
+ * @param halo_radius The radius of the halo to load around the internal block (e.g. 1 for a 3x3 mask, 2 for a 5x5 mask,
+ * etc.).
+ * @param width The input frame's width.
+ * @param height The input frame's height.
+ */
+template <typename T>
+__device__ void
+loadSharedMemoryWithHalo(T **shared, T *global, int halo_radius, int width, int height)
+{
+    // identify the coordinates of the output pixel to work on
+    int tx = threadIdx.x, ty = threadIdx.y;
+    int tx_adj = tx + halo_radius;
+    int ty_adj = ty + halo_radius;
+    int x = tx + blockIdx.x * blockDim.x;
+    int y = ty + blockIdx.y * blockDim.y;
+
+    // internal elements - loaded directly by corresponding threads, offset in
+    // shared memory by halo size
+    shared[ty_adj][tx_adj] = (y < height && x < width) ? global[y * width + x] : 0;
+
+    // top halo edge - loaded by bottom edge of threads
+    int halo_top_row = (blockIdx.y - 1) * BLOCK_SIZE + ty;
+    if (ty >= BLOCK_SIZE - halo_radius)
+    {
+        shared[ty - (BLOCK_SIZE - halo_radius)][tx_adj] = (halo_top_row < 0) ? 0 : global[halo_top_row * width + x];
+    }
+
+    // bottom halo edge - loaded by top edge of threads
+    int halo_bottom_row = (blockIdx.y + 1) * BLOCK_SIZE + ty;
+    if (ty < halo_radius)
+    {
+        shared[ty + BLOCK_SIZE + halo_radius][tx_adj] =
+            (halo_bottom_row >= height) ? 0 : global[halo_bottom_row * width + x];
+    }
+
+    // left halo edge - loaded by right edge of threads
+    int halo_left_col = (blockIdx.x - 1) * BLOCK_SIZE + tx;
+    if (tx >= BLOCK_SIZE - halo_radius)
+    {
+        shared[ty_adj][tx - (BLOCK_SIZE - halo_radius)] = (halo_left_col < 0) ? 0 : global[y * width + halo_left_col];
+    }
+
+    // right halo edge - loaded by left edge of threads
+    int halo_right_col = (blockIdx.x + 1) * BLOCK_SIZE + tx;
+    if (tx < halo_radius)
+    {
+        shared[ty_adj][tx + BLOCK_SIZE + halo_radius] =
+            (halo_right_col >= width) ? 0 : global[y * width + halo_right_col];
+    }
+
+    // halo corners - each loaded by the thread farthest from it (e.g. top right
+    // of halo by bottom left thread) logic is a combination of the conditions
+    // above
+    if (ty >= BLOCK_SIZE - halo_radius)
+    {
+        // top edge of halo
+
+        if (tx >= BLOCK_SIZE - halo_radius)
+        {
+            // top left halo corner
+            shared[ty - (BLOCK_SIZE - halo_radius)][tx - (BLOCK_SIZE - halo_radius)] =
+                (halo_top_row < 0 || halo_left_col < 0) ? 0 : global[halo_top_row * width + halo_left_col];
+        }
+        else if (tx < halo_radius)
+        {
+            // top right halo corner
+            shared[ty - (BLOCK_SIZE - halo_radius)][tx + BLOCK_SIZE + halo_radius] =
+                (halo_top_row < 0 || halo_right_col >= width) ? 0 : global[halo_top_row * width + halo_right_col];
+        }
+    }
+    else if (ty < halo_radius)
+    {
+        // bottom edge of halo
+
+        if (tx >= BLOCK_SIZE - halo_radius)
+        {
+            // bottom left halo corner
+            shared[ty + BLOCK_SIZE + halo_radius][tx - (BLOCK_SIZE - halo_radius)] =
+                (halo_bottom_row >= height || halo_left_col < 0) ? 0 : global[halo_bottom_row * width + halo_left_col];
+        }
+        else if (tx < halo_radius)
+        {
+            // bottom right halo corner
+            shared[ty + BLOCK_SIZE + halo_radius][tx + BLOCK_SIZE + halo_radius] =
+                (halo_bottom_row >= height || halo_right_col >= width)
+                    ? 0
+                    : global[halo_bottom_row * width + halo_right_col];
+        }
+    }
+
+    __syncthreads();
+}
+
+/**
  * Device-only code to get the bilinear interpolation of a point in an image.
  *
  * @param img The image to interpolate against.
@@ -58,23 +159,50 @@ bilinearInterpolate(unsigned char *img, float x, float y, int width, int height)
 __global__ void
 sobelFilter(float *ix, float *iy, unsigned char *frame, int width, int height)
 {
-    int x = threadIdx.x + blockIdx.x * blockDim.x;
-    int y = threadIdx.y + blockIdx.y * blockDim.y;
+    // define a block of shared memory large enough to hold the internal values and the halo
+    __shared__ unsigned char frameShared[BLOCK_SIZE + SOBEL_MASK_SIZE - 1][BLOCK_SIZE + SOBEL_MASK_SIZE - 1];
+    int halo_radius = SOBEL_MASK_SIZE / 2;
 
-    float dx, dy;
+    // identify the coordinates of the output pixel to work on
+    int tx = threadIdx.x, ty = threadIdx.y;
+    int tx_adj = tx + halo_radius;
+    int ty_adj = ty + halo_radius;
+    int x = tx + blockIdx.x * blockDim.x;
+    int y = ty + blockIdx.y * blockDim.y;
+    int global_index = y * width + x;
 
-    if (x > 0 && y > 0 && x < width - 1 && y < height - 1)
+    // load the input (including halo) into shared memory
+    loadSharedMemoryWithHalo<unsigned char>(frameShared, frame, halo_radius, width, height);
+
+    // =====================================
+    // perform the actual calculation
+    // =====================================
+
+    // don't write to output for nonexistent pixels
+    if (y >= height || x >= width)
     {
-        dx = (-1 * frame[(y - 1) * width + (x - 1)]) + (-2 * frame[y * width + (x - 1)]) +
-             (-1 * frame[(y + 1) * width + (x - 1)]) + (frame[(y - 1) * width + (x + 1)]) +
-             (2 * frame[y * width + (x + 1)]) + (frame[(y + 1) * width + (x + 1)]);
-        dy = (-1 * frame[(y - 1) * width + (x - 1)]) + (-2 * frame[(y - 1) * width + x]) +
-             (-1 * frame[(y - 1) * width + (x + 1)]) + (1 * frame[(y + 1) * width + (x - 1)]) +
-             (2 * frame[(y + 1) * width + x]) + (1 * frame[(y + 1) * width + (x + 1)]);
-
-        ix[y * width + x] = dx / 8;
-        iy[y * width + x] = dy / 8;
+        return;
     }
+
+    // don't compute for the outermost layer of pixels
+    if (y == 0 || y == height - 1 || x == 0 || x == width - 1)
+    {
+        ix[global_index] = 0;
+        iy[global_index] = 0;
+        return;
+    }
+
+    // do the actual computation for relevant threads
+    float dx = (-1 * frameShared[ty_adj - 1][tx_adj - 1]) + (-2 * frameShared[ty_adj][tx_adj - 1]) +
+               (-1 * frameShared[ty_adj + 1][tx_adj - 1]) + (frameShared[ty_adj - 1][tx_adj + 1]) +
+               (2 * frameShared[ty_adj][tx_adj + 1]) + (frameShared[ty_adj + 1][tx_adj + 1]);
+
+    float dy = (-1 * frameShared[ty_adj - 1][tx_adj - 1]) + (-2 * frameShared[ty_adj - 1][tx_adj]) +
+               (-1 * frameShared[ty_adj - 1][tx_adj + 1]) + (1 * frameShared[ty_adj + 1][tx_adj - 1]) +
+               (2 * frameShared[ty_adj + 1][tx_adj]) + (1 * frameShared[ty_adj + 1][tx_adj + 1]);
+
+    ix[global_index] = dx / 8;
+    iy[global_index] = dy / 8;
 }
 
 /**
@@ -94,7 +222,8 @@ temporalDifference(float *it, unsigned char *prevFrame, unsigned char *frame, in
 
     if (x < width && y < height)
     {
-        it[y * width + x] = frame[y * width + x] - prevFrame[y * width + x];
+        int global_index = y * width + x;
+        it[global_index] = frame[global_index] - prevFrame[global_index];
     }
 }
 
@@ -102,18 +231,31 @@ temporalDifference(float *it, unsigned char *prevFrame, unsigned char *frame, in
  * Kernel code to obtain an image's Harris Response given the sobel derivatives.
  *
  * @param response Device memory to store the initial Harris response.
- * @param ix Device memory to store Ix, the horizontal derivative.
- * @param iy Device memory to store Iy, the vertical derivative.
+ * @param ix Device memory containing Ix, the horizontal derivative.
+ * @param iy Device memory containing Iy, the vertical derivative.
  * @param width The image's width.
  * @param height The image's height.
  */
 __global__ void
 harrisResponse(float *response, float *ix, float *iy, int width, int height)
 {
-    int x = threadIdx.x + blockIdx.x * blockDim.x;
-    int y = threadIdx.y + blockIdx.y * blockDim.y;
+    __shared__ float ixShared[BLOCK_SIZE + HARRIS_MASK_SIZE - 1][BLOCK_SIZE + HARRIS_MASK_SIZE - 1];
+    __shared__ float iyShared[BLOCK_SIZE + HARRIS_MASK_SIZE - 1][BLOCK_SIZE + HARRIS_MASK_SIZE - 1];
+    int halo_radius = HARRIS_MASK_SIZE / 2;
 
-    if (x < 2 || y < 2 || x >= width - 2 || y >= height - 2)
+    int tx = threadIdx.x, ty = threadIdx.y;
+    int tx_adj = tx + halo_radius;
+    int ty_adj = ty + halo_radius;
+    int x = tx + blockIdx.x * blockDim.x;
+    int y = ty + blockIdx.y * blockDim.y;
+
+    // collaboratively load the horizontal and vertical derivatives into shared memory, including a halo
+    loadSharedMemoryWithHalo<float>(ixShared, ix, halo_radius, width, height);
+    loadSharedMemoryWithHalo<float>(iyShared, iy, halo_radius, width, height);
+
+
+    // don't compute for the outermost layers of pixels
+    if (x < halo_radius || y < halo_radius || x >= width - halo_radius || y >= height - halo_radius)
     {
         return;
     }
@@ -125,12 +267,12 @@ harrisResponse(float *response, float *ix, float *iy, int width, int height)
     // Creating the sum matrices for each pixel
     // TODO: Gaussian Weights??
     // goodFeaturesToTrack does so, maybe this will reduce false positives :shrug:
-    for (int dy = -2; dy <= 2; dy++)
+    for (int dy = -halo_radius; dy <= halo_radius; dy++)
     {
-        for (int dx = -2; dx <= 2; dx++)
+        for (int dx = -halo_radius; dx <= halo_radius; dx++)
         {
-            float gx = ix[(y + dy) * width + (x + dx)];
-            float gy = iy[(y + dy) * width + (x + dx)];
+            float gx = ixShared[ty_adj + dy][tx_adj + dx];
+            float gy = iyShared[ty_adj + dy][tx_adj + dx];
             sumIxx += gx * gx;
             sumIyy += gy * gy;
             sumIxy += gx * gy;
@@ -160,16 +302,27 @@ __global__ void
 harrisThresholder(float3 *features, int *featureCount, float *response, float threshold, int maxFeatures, int width,
                   int height)
 {
-    int x = threadIdx.x + blockIdx.x * blockDim.x;
-    int y = threadIdx.y + blockIdx.y * blockDim.y;
+    // define a block of shared memory large enough to hold the internal values and the halo
+    __shared__ float responseShared[BLOCK_SIZE + (HARRIS_DISTANCE * 2)][BLOCK_SIZE + (HARRIS_DISTANCE * 2)];
+    int halo_radius = HARRIS_DISTANCE;
 
+    int tx = threadIdx.x, ty = threadIdx.y;
+    int tx_adj = tx + halo_radius;
+    int ty_adj = ty + halo_radius;
+    int x = tx + blockIdx.x * blockDim.x;
+    int y = ty + blockIdx.y * blockDim.y;
+
+    loadSharedMemoryWithHalo<float>(responseShared, response, halo_radius, width, height);
+
+    // don't calculate for the outermost layers of pixels
     if (x < 1 || y < 1 || x >= width - 1 || y >= height - 1)
     {
         return;
     }
 
-    float r = response[y * width + x];
 
+    // Initial threshold check
+    float r = responseShared[ty_adj][tx_adj];
     if (r < threshold)
     {
         return;
@@ -188,7 +341,7 @@ harrisThresholder(float3 *features, int *featureCount, float *response, float th
             {
                 continue;
             }
-            if (r <= response[(y + yShift) * width + (x + xShift)])
+            if (r <= responseShared[ty_adj + yShift][tx_adj + xShift])
             {
                 return;
             }
@@ -198,9 +351,10 @@ harrisThresholder(float3 *features, int *featureCount, float *response, float th
     int featureSlot = atomicAdd(featureCount, 1);
     if (featureSlot < maxFeatures)
     {
-        features[featureSlot].x = x;
-        features[featureSlot].y = y;
-        features[featureSlot].z = 1;
+        features[featureSlot] = make_float3(x, y, 1);
+        // features[featureSlot].x = x;
+        // features[featureSlot].y = y;
+        // features[featureSlot].z = 1;
     }
 }
 
