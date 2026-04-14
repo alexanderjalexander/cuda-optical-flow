@@ -1,6 +1,8 @@
 #ifndef STATISTICS_H
 #define STATISTICS_H
 
+#include "../processing/video_io.hpp"
+
 #include <chrono>
 #include <vector>
 
@@ -16,6 +18,6 @@ struct ExecStats
 };
 
 void printStatistics(char *functionName, ExecStats &exec);
-int recordStatsSparseLucasKanade(bool onCPU, ExecStats &exec);
+int recordStatsSparseLucasKanade(bool onCPU, VideoInfo &video, ExecStats &exec);
 
 #endif

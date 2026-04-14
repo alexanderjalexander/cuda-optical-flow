@@ -1,9 +1,18 @@
 #include "statistics.hpp"
+#include "../tracking/lucasKanade.hpp"
+
+#include <sys/mman.h>
+#include <sys/wait.h>
 
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 #include <iostream>
 #include <numeric>
+#include <vector>
+
+using namespace std;
+using namespace chrono;
 
 /**
  * @brief Private method to get the percentile of data. Hs[low] + (fandles even/odd sizes.
@@ -13,7 +22,7 @@
  * @return
  */
 template <typename T>
-T calculatePercentile(const std::vector<T>& sortedData, double percentile) {
+T calculatePercentile(const vector<T>& sortedData, double percentile) {
     if (sortedData.empty())
     {
         return static_cast<T>(0.0);
@@ -28,8 +37,8 @@ T calculatePercentile(const std::vector<T>& sortedData, double percentile) {
     }
 
     double rank = (percentile / 100.0) * (sortedData.size() - 1);
-    size_t low = static_cast<size_t>(std::floor(rank));
-    size_t high = static_cast<size_t>(std::ceil(rank));
+    size_t low = static_cast<size_t>(floor(rank));
+    size_t high = static_cast<size_t>(ceil(rank));
     double fraction = rank - low;
 
     return sortedData[low] + (fraction * (sortedData[high] - sortedData[low]));
@@ -47,42 +56,42 @@ T calculatePercentile(const std::vector<T>& sortedData, double percentile) {
 void
 printStatistics(char *functionName, ExecStats &exec)
 {
-    std::stable_sort(exec.executionTimes.begin(), exec.executionTimes.end());
+    stable_sort(exec.executionTimes.begin(), exec.executionTimes.end());
 
     size_t count = exec.executionTimes.size();
-    std::chrono::duration<double> minTime = exec.executionTimes[0];
-    std::chrono::duration<double> maxTime = exec.executionTimes[count - 1];
-    double sum = std::reduce(
+    duration<double> minTime = exec.executionTimes[0];
+    duration<double> maxTime = exec.executionTimes[count - 1];
+    double sum = reduce(
         exec.executionTimes.begin(),
         exec.executionTimes.end(),
-        std::chrono::duration<double>(0.0)
+        duration<double>(0.0)
     ).count();
     double mean = sum / count;
 
-    double sqSum = std::reduce(
+    double sqSum = reduce(
         exec.executionTimes.begin(),
         exec.executionTimes.end(),
-        std::chrono::duration<double>(0.0),
-        [mean](std::chrono::duration<double> a, std::chrono::duration<double> b) {
+        duration<double>(0.0),
+        [mean](duration<double> a, duration<double> b) {
             double diff = b.count() - mean;
-            return std::chrono::duration<double>(a.count() + diff * diff);
+            return duration<double>(a.count() + diff * diff);
         }
     ).count();
-    double stdDev = std::sqrt(sqSum / count);
+    double stdDev = sqrt(sqSum / count);
 
-    std::chrono::duration<double> perc25 = calculatePercentile(exec.executionTimes, 25.0);
-    std::chrono::duration<double> median = calculatePercentile(exec.executionTimes, 50.0);
-    std::chrono::duration<double> perc75 = calculatePercentile(exec.executionTimes, 75.0);
+    duration<double> perc25 = calculatePercentile(exec.executionTimes, 25.0);
+    duration<double> median = calculatePercentile(exec.executionTimes, 50.0);
+    duration<double> perc75 = calculatePercentile(exec.executionTimes, 75.0);
 
-    std::cout << "==========" << functionName << " Execution Time Statistics" << "==========" << std::endl;
-    std::printf("%-10s --> %10zu\n", "Count", count);
-    std::printf("%-10s --> %10.4lf\n", "Minimum", minTime.count());
-    std::printf("%-10s --> %10.4lf\n", "Maximum", maxTime.count());
-    std::printf("%-10s --> %10.4lf\n", "Mean", mean);
-    std::printf("%-10s --> %10.4lf\n", "Std. Dev.", stdDev);
-    std::printf("%-10s --> %10.4lf\n", "25th Perc.", perc25.count());
-    std::printf("%-10s --> %10.4lf\n", "50th Perc.", median.count());
-    std::printf("%-10s --> %10.4lf\n", "75th Perc.", perc75.count());
+    cout << "==========" << functionName << " Execution Time Statistics" << "==========" << endl;
+    printf("%-10s --> %10zu\n", "Count", count);
+    printf("%-10s --> %10.4lf\n", "Minimum", minTime.count());
+    printf("%-10s --> %10.4lf\n", "Maximum", maxTime.count());
+    printf("%-10s --> %10.4lf\n", "Mean", mean);
+    printf("%-10s --> %10.4lf\n", "Std. Dev.", stdDev);
+    printf("%-10s --> %10.4lf\n", "25th Perc.", perc25.count());
+    printf("%-10s --> %10.4lf\n", "50th Perc.", median.count());
+    printf("%-10s --> %10.4lf\n", "75th Perc.", perc75.count());
 }
 
 /**
@@ -95,8 +104,81 @@ printStatistics(char *functionName, ExecStats &exec)
  * @return
  */
 int
-recordStatsSparseLucasKanade(bool onCPU, ExecStats &exec)
+recordStatsSparseLucasKanade(bool onCPU, VideoInfo &video, ExecStats &exec)
 {
-    // TODO: COMPLETE
+    vector<pid_t> children = vector<pid_t>(STATISTICS_ITERATIONS);
+    unsigned long execTimesSize = sizeof(duration<double>) * STATISTICS_ITERATIONS;
+    duration<double> *execTimes = (duration<double>*)mmap(
+        NULL,
+        execTimesSize,
+        PROT_READ | PROT_WRITE,
+        MAP_SHARED | MAP_ANONYMOUS,
+        -1,
+        0
+    );
+
+
+    for (int i = 0; i < STATISTICS_ITERATIONS; i++)
+    {
+        pid_t pid = fork();
+        if (pid < 0)
+        {
+            std::cerr << "Fork failed: " << strerror(errno) << std::endl;
+            return EXIT_FAILURE;
+        }
+        else if (pid == 0)
+        {
+            auto startTime = high_resolution_clock::now();
+            if (onCPU)
+            {
+                sparseLucasKanadeCPU(video);
+            }
+            else
+            {
+                sparseLucasKanadeGPU(video);
+            }
+            auto stopTime = high_resolution_clock::now();
+            duration<double> sec = stopTime - startTime;
+            execTimes[i] = sec;
+            exit(EXIT_SUCCESS);
+        }
+        else
+        {
+            children.push_back(pid);
+        }
+    }
+
+    for (int i = 0; i < children.size(); i++)
+    {
+        int status;
+        if (waitpid(children[i], &status, 0) < 0)
+        {
+            std::cerr << "Child at PID " << children[i] << " failed with status " << WEXITSTATUS(status) << std::endl;
+        }
+    }
+
+    vector<duration<double>> execTimesVec(
+        static_cast<duration<double>*>(execTimes),
+        static_cast<duration<double>*>(execTimes) + execTimesSize
+    );
+
+    ExecStats execStats = {
+        execTimesVec
+    };
+
+    munmap(execTimes, execTimesSize);
+
+    char functionNameSparseLKCPU[] = "sparseLucasKanadeCPU";
+    char functionNameSparseLKGPU[] = "sparseLucasKanadeGPU";
+
+    if (onCPU)
+    {
+        printStatistics(functionNameSparseLKCPU, execStats);
+    }
+    else
+    {
+        printStatistics(functionNameSparseLKGPU, execStats);
+    }
+
     return EXIT_SUCCESS;
 }
