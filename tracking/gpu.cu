@@ -533,6 +533,8 @@ sparseLucasKanadeGPU(VideoInfo &video)
                                                                   deviceFlowVectors, width, height);
         cudaDeviceSynchronize();
 
+        // TODO: consider possibly abstracting the drawing to the GPU?
+        // But then we still need to copy the output frame... argh...
         cudaMemcpy(frameFeatures, deviceFrameFeatures, featureCount * sizeof(float3), cudaMemcpyDeviceToHost);
 
         cv::Mat output;
