@@ -1,9 +1,12 @@
 #include <opencv2/opencv.hpp>
 #include <sys/stat.h>
+#include <cuda_runtime.h>
+
 
 #include "processing/video_io.hpp"
 #include "timing/stopwatch.hpp"
 #include "tracking/lucasKanade.hpp"
+#include "timing/statistics.hpp"
 
 #include <cstdlib>
 #include <filesystem>
@@ -12,23 +15,62 @@
 #include <ostream>
 #include <stdio.h>
 #include <stdlib.h>
+#include <sysexits.h>
 #include <unistd.h>
+
+const char flags[] = "s";
 
 static void
 usage(const char *progname)
 {
-    printf("Usage: %s\n", progname);
+    fprintf(stderr, "Usage: %s [-%s] videoName\n", progname, flags);
+    fprintf(stderr, "\t-s --> Run in 'Statistics Mode'\n");
+    fprintf(stderr,
+        "*NOTE* videoName is an input file within the /inputs folder, and must not"
+        "contain the video extension. It is expected to be a .mp4 file.\n");
 }
 
 int
 main(int argc, char *argv[])
 {
+    // Various options flags
+    bool statsModeEnabled = false;
+
+    // Other misc stuff
+    char *progname = argv[0];
+
+    // Parse all options
+    int opt;
+    while ((opt = getopt(argc, argv, flags)) != -1)
+    {
+        switch (opt)
+        {
+            case 's':
+                std::cout << "Statistics Mode enabled." << std::endl;
+                statsModeEnabled = true;
+                break;
+            default:
+                usage(progname);
+                return EX_USAGE;
+        }
+    }
+
+    // Parse options after arguments
+    argc -= optind;
+	argv += optind;
+
+    if (argc != 1)
+    {
+        usage(progname);
+        return EX_USAGE;
+    }
+
+    char* fileInputPath = argv[0];
+
     // Reading the videos
     std::filesystem::path current_dir = std::filesystem::current_path();
-    std::string file_input = "Slow-Traffic";
+    std::string file_input = fileInputPath;
     std::filesystem::path full_path = current_dir / "inputs" / (file_input + ".mp4");
-    std::filesystem::path sparseGpuOutputPath = current_dir / "outputs" / (file_input + "-SparseGPU.mp4");
-    std::filesystem::path sparseCpuOutputPath = current_dir / "outputs" / (file_input + "-SparseCPU.mp4");
 
     VideoInfo sparseCpuVideo;
     VideoInfo sparseGpuVideo;
@@ -43,39 +85,61 @@ main(int argc, char *argv[])
         return EXIT_FAILURE;
     }
 
-    // GPU Lucas Kanade
-
-    std::cout << std::endl << "Starting GPU Lucas Kanade..." << std::endl;
-    std::cout << "Frames to Process: " << sparseGpuVideo.frames.size() << std::endl;
-    startStopwatch();
-    sparseLucasKanadeGPU(sparseGpuVideo);
-    stopStopwatch();
-
-    std::cout << std::endl << "Writing GPU Lucas Kanade output to video..." << std::endl;
-
-    startStopwatch();
-    if (writeVideo(sparseGpuVideo, sparseGpuOutputPath) != EXIT_SUCCESS)
+    if (!std::filesystem::exists(full_path))
     {
-        return EXIT_FAILURE;
+        std::cerr << "File at '" << full_path << "' does not exist." << std::endl;
+        return EX_NOINPUT;
     }
-    stopStopwatch();
 
-    // CPU Lucas Kanade
-
-    std::cout << std::endl << "Starting CPU Lucas Kanade..." << std::endl;
-    std::cout << "Frames to Process: " << sparseCpuVideo.frames.size() << std::endl;
-    startStopwatch();
-    sparseLucasKanadeCPU(sparseCpuVideo);
-    stopStopwatch();
-
-    std::cout << std::endl << "Writing CPU Lucas Kanade output to video..." << std::endl;
-
-    startStopwatch();
-    if (writeVideo(sparseCpuVideo, sparseCpuOutputPath) != EXIT_SUCCESS)
+    if (statsModeEnabled)
     {
-        return EXIT_FAILURE;
+        // Run both algorithms in statistics mode
+        int returnCode;
+        if ((returnCode = recordStatsSparseLucasKanade(true, sparseCpuVideo)) != EXIT_SUCCESS)
+        {
+            return returnCode;
+        }
+        if ((returnCode = recordStatsSparseLucasKanade(false, sparseGpuVideo)) != EXIT_SUCCESS)
+        {
+            return returnCode;
+        }
     }
-    stopStopwatch();
+    else
+    {
+        // Run both algorithms normally, and output the result to a new vid in the /outputs folder
+        std::filesystem::path sparseGpuOutputPath = current_dir / "outputs" / (file_input + "-SparseGPU.mp4");
+        std::filesystem::path sparseCpuOutputPath = current_dir / "outputs" / (file_input + "-SparseCPU.mp4");
+
+        // CPU Lucas Kanade
+        std::cout << std::endl << "Starting CPU Lucas Kanade..." << std::endl;
+        std::cout << "Frames to Process: " << sparseCpuVideo.frames.size() << std::endl;
+        startStopwatch();
+        sparseLucasKanadeCPU(sparseCpuVideo);
+        stopStopwatch();
+
+        std::cout << std::endl << "Writing CPU Lucas Kanade output to video..." << std::endl;
+        startStopwatch();
+        if (writeVideo(sparseCpuVideo, sparseCpuOutputPath) != EXIT_SUCCESS)
+        {
+            return EXIT_FAILURE;
+        }
+        stopStopwatch();
+
+        // GPU Lucas Kanade
+        std::cout << std::endl << "Starting GPU Lucas Kanade..." << std::endl;
+        std::cout << "Frames to Process: " << sparseGpuVideo.frames.size() << std::endl;
+        startStopwatch();
+        sparseLucasKanadeGPU(sparseGpuVideo);
+        stopStopwatch();
+
+        std::cout << std::endl << "Writing GPU Lucas Kanade output to video..." << std::endl;
+        startStopwatch();
+        if (writeVideo(sparseGpuVideo, sparseGpuOutputPath) != EXIT_SUCCESS)
+        {
+            return EXIT_FAILURE;
+        }
+        stopStopwatch();
+    }
 
     return EXIT_SUCCESS;
 }

@@ -18,6 +18,6 @@ struct ExecStats
 };
 
 void printStatistics(char *functionName, ExecStats &exec);
-int recordStatsSparseLucasKanade(bool onCPU, VideoInfo &video, ExecStats &exec);
+int recordStatsSparseLucasKanade(bool onCPU, VideoInfo &video);
 
 #endif

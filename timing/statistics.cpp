@@ -83,7 +83,7 @@ printStatistics(char *functionName, ExecStats &exec)
     duration<double> median = calculatePercentile(exec.executionTimes, 50.0);
     duration<double> perc75 = calculatePercentile(exec.executionTimes, 75.0);
 
-    cout << "==========" << functionName << " Execution Time Statistics" << "==========" << endl;
+    cout << "========== " << functionName << " Execution Time Statistics" << " ==========" << endl;
     printf("%-10s --> %10zu\n", "Count", count);
     printf("%-10s --> %10.4lf\n", "Minimum", minTime.count());
     printf("%-10s --> %10.4lf\n", "Maximum", maxTime.count());
@@ -104,72 +104,45 @@ printStatistics(char *functionName, ExecStats &exec)
  * @return
  */
 int
-recordStatsSparseLucasKanade(bool onCPU, VideoInfo &video, ExecStats &exec)
+recordStatsSparseLucasKanade(bool onCPU, VideoInfo &video)
 {
-    vector<pid_t> children = vector<pid_t>(STATISTICS_ITERATIONS);
-    unsigned long execTimesSize = sizeof(duration<double>) * STATISTICS_ITERATIONS;
-    duration<double> *execTimes = (duration<double>*)mmap(
-        NULL,
-        execTimesSize,
-        PROT_READ | PROT_WRITE,
-        MAP_SHARED | MAP_ANONYMOUS,
-        -1,
-        0
-    );
+    vector<duration<double>> execTimesVec;
+    execTimesVec.reserve(STATISTICS_ITERATIONS);
 
+    char functionNameSparseLKCPU[] = "sparseLucasKanadeCPU";
+    char functionNameSparseLKGPU[] = "sparseLucasKanadeGPU";
+
+    std::cout
+        << "===== "
+        << "Starting " << STATISTICS_ITERATIONS << " iterations of "
+        << (onCPU ? functionNameSparseLKCPU : functionNameSparseLKGPU)
+        << " ====="
+        << std::endl;
 
     for (int i = 0; i < STATISTICS_ITERATIONS; i++)
     {
-        pid_t pid = fork();
-        if (pid < 0)
+        auto startTime = high_resolution_clock::now();
+        if (onCPU)
         {
-            std::cerr << "Fork failed: " << strerror(errno) << std::endl;
-            return EXIT_FAILURE;
-        }
-        else if (pid == 0)
-        {
-            auto startTime = high_resolution_clock::now();
-            if (onCPU)
-            {
-                sparseLucasKanadeCPU(video);
-            }
-            else
-            {
-                sparseLucasKanadeGPU(video);
-            }
-            auto stopTime = high_resolution_clock::now();
-            duration<double> sec = stopTime - startTime;
-            execTimes[i] = sec;
-            exit(EXIT_SUCCESS);
+            sparseLucasKanadeCPU(video);
         }
         else
         {
-            children.push_back(pid);
+            sparseLucasKanadeGPU(video);
         }
-    }
+        auto stopTime = high_resolution_clock::now();
+        duration<double> sec = stopTime - startTime;
 
-    for (int i = 0; i < children.size(); i++)
-    {
-        int status;
-        if (waitpid(children[i], &status, 0) < 0)
-        {
-            std::cerr << "Child at PID " << children[i] << " failed with status " << WEXITSTATUS(status) << std::endl;
-        }
-    }
+        std::fprintf(stdout, "--> %*d. ", (int) floor(log10(STATISTICS_ITERATIONS) + 1), i + 1);
+        std::cout << sec.count() << " seconds" << std::endl;
+        execTimesVec.push_back(sec);
 
-    vector<duration<double>> execTimesVec(
-        static_cast<duration<double>*>(execTimes),
-        static_cast<duration<double>*>(execTimes) + execTimesSize
-    );
+        video.outputFrames.clear();
+    }
 
     ExecStats execStats = {
         execTimesVec
     };
-
-    munmap(execTimes, execTimesSize);
-
-    char functionNameSparseLKCPU[] = "sparseLucasKanadeCPU";
-    char functionNameSparseLKGPU[] = "sparseLucasKanadeGPU";
 
     if (onCPU)
     {
