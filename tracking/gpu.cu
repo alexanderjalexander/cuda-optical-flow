@@ -24,8 +24,11 @@
  */
 template <typename T>
 __device__ void
-loadSharedMemoryWithHalo(T **shared, T *global, int halo_radius, int width, int height)
+loadSharedMemoryWithHalo(T *shared, T *global, int halo_radius, int width, int height)
 {
+    // stride, to ensure that we properly go from one row to the next
+    int stride = BLOCK_SIZE + (halo_radius * 2);
+
     // identify the coordinates of the output pixel to work on
     int tx = threadIdx.x, ty = threadIdx.y;
     int tx_adj = tx + halo_radius;
@@ -35,20 +38,20 @@ loadSharedMemoryWithHalo(T **shared, T *global, int halo_radius, int width, int 
 
     // internal elements - loaded directly by corresponding threads, offset in
     // shared memory by halo size
-    shared[ty_adj][tx_adj] = (y < height && x < width) ? global[y * width + x] : 0;
+    shared[(ty_adj * stride) + tx_adj] = (y < height && x < width) ? global[y * width + x] : 0;
 
     // top halo edge - loaded by bottom edge of threads
     int halo_top_row = (blockIdx.y - 1) * BLOCK_SIZE + ty;
     if (ty >= BLOCK_SIZE - halo_radius)
     {
-        shared[ty - (BLOCK_SIZE - halo_radius)][tx_adj] = (halo_top_row < 0) ? 0 : global[halo_top_row * width + x];
+        shared[((ty - (BLOCK_SIZE - halo_radius)) * stride) + tx_adj] = (halo_top_row < 0) ? 0 : global[halo_top_row * width + x];
     }
 
     // bottom halo edge - loaded by top edge of threads
     int halo_bottom_row = (blockIdx.y + 1) * BLOCK_SIZE + ty;
     if (ty < halo_radius)
     {
-        shared[ty + BLOCK_SIZE + halo_radius][tx_adj] =
+        shared[((ty + BLOCK_SIZE + halo_radius) * stride) + tx_adj] =
             (halo_bottom_row >= height) ? 0 : global[halo_bottom_row * width + x];
     }
 
@@ -56,14 +59,14 @@ loadSharedMemoryWithHalo(T **shared, T *global, int halo_radius, int width, int 
     int halo_left_col = (blockIdx.x - 1) * BLOCK_SIZE + tx;
     if (tx >= BLOCK_SIZE - halo_radius)
     {
-        shared[ty_adj][tx - (BLOCK_SIZE - halo_radius)] = (halo_left_col < 0) ? 0 : global[y * width + halo_left_col];
+        shared[(ty_adj * stride) + tx - (BLOCK_SIZE - halo_radius)] = (halo_left_col < 0) ? 0 : global[y * width + halo_left_col];
     }
 
     // right halo edge - loaded by left edge of threads
     int halo_right_col = (blockIdx.x + 1) * BLOCK_SIZE + tx;
     if (tx < halo_radius)
     {
-        shared[ty_adj][tx + BLOCK_SIZE + halo_radius] =
+        shared[(ty_adj * stride) + tx + BLOCK_SIZE + halo_radius] =
             (halo_right_col >= width) ? 0 : global[y * width + halo_right_col];
     }
 
@@ -77,13 +80,13 @@ loadSharedMemoryWithHalo(T **shared, T *global, int halo_radius, int width, int 
         if (tx >= BLOCK_SIZE - halo_radius)
         {
             // top left halo corner
-            shared[ty - (BLOCK_SIZE - halo_radius)][tx - (BLOCK_SIZE - halo_radius)] =
+            shared[((ty - (BLOCK_SIZE - halo_radius)) * stride) + tx - (BLOCK_SIZE - halo_radius)] =
                 (halo_top_row < 0 || halo_left_col < 0) ? 0 : global[halo_top_row * width + halo_left_col];
         }
         else if (tx < halo_radius)
         {
             // top right halo corner
-            shared[ty - (BLOCK_SIZE - halo_radius)][tx + BLOCK_SIZE + halo_radius] =
+            shared[((ty - (BLOCK_SIZE - halo_radius)) * stride) + tx + BLOCK_SIZE + halo_radius] =
                 (halo_top_row < 0 || halo_right_col >= width) ? 0 : global[halo_top_row * width + halo_right_col];
         }
     }
@@ -94,13 +97,13 @@ loadSharedMemoryWithHalo(T **shared, T *global, int halo_radius, int width, int 
         if (tx >= BLOCK_SIZE - halo_radius)
         {
             // bottom left halo corner
-            shared[ty + BLOCK_SIZE + halo_radius][tx - (BLOCK_SIZE - halo_radius)] =
+            shared[((ty + BLOCK_SIZE + halo_radius) * stride) + tx - (BLOCK_SIZE - halo_radius)] =
                 (halo_bottom_row >= height || halo_left_col < 0) ? 0 : global[halo_bottom_row * width + halo_left_col];
         }
         else if (tx < halo_radius)
         {
             // bottom right halo corner
-            shared[ty + BLOCK_SIZE + halo_radius][tx + BLOCK_SIZE + halo_radius] =
+            shared[((ty + BLOCK_SIZE + halo_radius) * stride) + tx + BLOCK_SIZE + halo_radius] =
                 (halo_bottom_row >= height || halo_right_col >= width)
                     ? 0
                     : global[halo_bottom_row * width + halo_right_col];
@@ -172,7 +175,7 @@ sobelFilter(float *ix, float *iy, unsigned char *frame, int width, int height)
     int global_index = y * width + x;
 
     // load the input (including halo) into shared memory
-    loadSharedMemoryWithHalo<unsigned char>(frameShared, frame, halo_radius, width, height);
+    loadSharedMemoryWithHalo<unsigned char>(frameShared[0], frame, halo_radius, width, height);
 
     // =====================================
     // perform the actual calculation
@@ -250,8 +253,8 @@ harrisResponse(float *response, float *ix, float *iy, int width, int height)
     int y = ty + blockIdx.y * blockDim.y;
 
     // collaboratively load the horizontal and vertical derivatives into shared memory, including a halo
-    loadSharedMemoryWithHalo<float>(ixShared, ix, halo_radius, width, height);
-    loadSharedMemoryWithHalo<float>(iyShared, iy, halo_radius, width, height);
+    loadSharedMemoryWithHalo<float>(ixShared[0], ix, halo_radius, width, height);
+    loadSharedMemoryWithHalo<float>(iyShared[0], iy, halo_radius, width, height);
 
 
     // don't compute for the outermost layers of pixels
@@ -312,7 +315,7 @@ harrisThresholder(float3 *features, int *featureCount, float *response, float th
     int x = tx + blockIdx.x * blockDim.x;
     int y = ty + blockIdx.y * blockDim.y;
 
-    loadSharedMemoryWithHalo<float>(responseShared, response, halo_radius, width, height);
+    loadSharedMemoryWithHalo<float>(responseShared[0], response, halo_radius, width, height);
 
     // don't calculate for the outermost layers of pixels
     if (x < 1 || y < 1 || x >= width - 1 || y >= height - 1)
@@ -639,6 +642,8 @@ sparseLucasKanadeGPU(VideoInfo &video)
     sobelFilter<<<gridDim, blockDim>>>(deviceIx, deviceIy, deviceFrame, width, height);
     harrisResponse<<<gridDim, blockDim>>>(deviceResponse, deviceIx, deviceIy, width, height);
     cudaDeviceSynchronize();
+
+    printf("ok we're fine\n");
 
     // == Threshold Calculations w/ Thrust ==
 
