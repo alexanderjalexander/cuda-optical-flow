@@ -3,115 +3,10 @@
 
 #include "../processing/drawing.hpp"
 
+#include "gpu_utilities.cuh"
 #include "lucasKanade.hpp"
 
 #include <stdio.h>
-
-#define BLOCK_SIZE 16
-
-/**
- * Device-only code to collaboratively load a block of data into shared memory, including a halo for convolution
- * operations. Loads zero if the thread corresponds to a data or halo element outside the original frame. Calls
- * syncthreads at the end to ensure all threads have finished loading their data before any subsequent operations.
- *
- * @param T The type of the data to be loaded.
- * @param shared  Device shared memory to load the data into, expected to be a 2D array.
- * @param global Device global memory array containing input data.
- * @param halo_radius The radius of the halo to load around the internal block (e.g. 1 for a 3x3 mask, 2 for a 5x5 mask,
- * etc.).
- * @param width The input frame's width.
- * @param height The input frame's height.
- */
-template <typename T>
-__device__ void
-loadSharedMemoryWithHalo(T *shared, T *global, int halo_radius, int width, int height)
-{
-    // stride, to ensure that we properly go from one row to the next
-    int stride = BLOCK_SIZE + (halo_radius * 2);
-
-    // identify the coordinates of the output pixel to work on
-    int tx = threadIdx.x, ty = threadIdx.y;
-    int tx_adj = tx + halo_radius;
-    int ty_adj = ty + halo_radius;
-    int x = tx + blockIdx.x * blockDim.x;
-    int y = ty + blockIdx.y * blockDim.y;
-
-    // internal elements - loaded directly by corresponding threads, offset in
-    // shared memory by halo size
-    shared[(ty_adj * stride) + tx_adj] = (y < height && x < width) ? global[y * width + x] : 0;
-
-    // top halo edge - loaded by bottom edge of threads
-    int halo_top_row = (blockIdx.y - 1) * BLOCK_SIZE + ty;
-    if (ty >= BLOCK_SIZE - halo_radius)
-    {
-        shared[((ty - (BLOCK_SIZE - halo_radius)) * stride) + tx_adj] = (halo_top_row < 0) ? 0 : global[halo_top_row * width + x];
-    }
-
-    // bottom halo edge - loaded by top edge of threads
-    int halo_bottom_row = (blockIdx.y + 1) * BLOCK_SIZE + ty;
-    if (ty < halo_radius)
-    {
-        shared[((ty + BLOCK_SIZE + halo_radius) * stride) + tx_adj] =
-            (halo_bottom_row >= height) ? 0 : global[halo_bottom_row * width + x];
-    }
-
-    // left halo edge - loaded by right edge of threads
-    int halo_left_col = (blockIdx.x - 1) * BLOCK_SIZE + tx;
-    if (tx >= BLOCK_SIZE - halo_radius)
-    {
-        shared[(ty_adj * stride) + tx - (BLOCK_SIZE - halo_radius)] = (halo_left_col < 0) ? 0 : global[y * width + halo_left_col];
-    }
-
-    // right halo edge - loaded by left edge of threads
-    int halo_right_col = (blockIdx.x + 1) * BLOCK_SIZE + tx;
-    if (tx < halo_radius)
-    {
-        shared[(ty_adj * stride) + tx + BLOCK_SIZE + halo_radius] =
-            (halo_right_col >= width) ? 0 : global[y * width + halo_right_col];
-    }
-
-    // halo corners - each loaded by the thread farthest from it (e.g. top right
-    // of halo by bottom left thread) logic is a combination of the conditions
-    // above
-    if (ty >= BLOCK_SIZE - halo_radius)
-    {
-        // top edge of halo
-
-        if (tx >= BLOCK_SIZE - halo_radius)
-        {
-            // top left halo corner
-            shared[((ty - (BLOCK_SIZE - halo_radius)) * stride) + tx - (BLOCK_SIZE - halo_radius)] =
-                (halo_top_row < 0 || halo_left_col < 0) ? 0 : global[halo_top_row * width + halo_left_col];
-        }
-        else if (tx < halo_radius)
-        {
-            // top right halo corner
-            shared[((ty - (BLOCK_SIZE - halo_radius)) * stride) + tx + BLOCK_SIZE + halo_radius] =
-                (halo_top_row < 0 || halo_right_col >= width) ? 0 : global[halo_top_row * width + halo_right_col];
-        }
-    }
-    else if (ty < halo_radius)
-    {
-        // bottom edge of halo
-
-        if (tx >= BLOCK_SIZE - halo_radius)
-        {
-            // bottom left halo corner
-            shared[((ty + BLOCK_SIZE + halo_radius) * stride) + tx - (BLOCK_SIZE - halo_radius)] =
-                (halo_bottom_row >= height || halo_left_col < 0) ? 0 : global[halo_bottom_row * width + halo_left_col];
-        }
-        else if (tx < halo_radius)
-        {
-            // bottom right halo corner
-            shared[((ty + BLOCK_SIZE + halo_radius) * stride) + tx + BLOCK_SIZE + halo_radius] =
-                (halo_bottom_row >= height || halo_right_col >= width)
-                    ? 0
-                    : global[halo_bottom_row * width + halo_right_col];
-        }
-    }
-
-    __syncthreads();
-}
 
 /**
  * Device-only code to get the bilinear interpolation of a point in an image.
@@ -163,8 +58,8 @@ __global__ void
 sobelFilter(float *ix, float *iy, unsigned char *frame, int width, int height)
 {
     // define a block of shared memory large enough to hold the internal values and the halo
-    __shared__ unsigned char frameShared[BLOCK_SIZE + SOBEL_MASK_SIZE - 1][BLOCK_SIZE + SOBEL_MASK_SIZE - 1];
     int halo_radius = SOBEL_MASK_SIZE / 2;
+    __shared__ unsigned char frameShared[BLOCK_SIZE + SOBEL_MASK_SIZE - 1][BLOCK_SIZE + SOBEL_MASK_SIZE - 1];
 
     // identify the coordinates of the output pixel to work on
     int tx = threadIdx.x, ty = threadIdx.y;
@@ -242,19 +137,20 @@ temporalDifference(float *it, unsigned char *prevFrame, unsigned char *frame, in
 __global__ void
 harrisResponse(float *response, float *ix, float *iy, int width, int height)
 {
+    // define multiple shared memory blocks large enough to hold the internal values and the halos
+    int halo_radius = HARRIS_MASK_SIZE / 2;
     __shared__ float ixShared[BLOCK_SIZE + HARRIS_MASK_SIZE - 1][BLOCK_SIZE + HARRIS_MASK_SIZE - 1];
     __shared__ float iyShared[BLOCK_SIZE + HARRIS_MASK_SIZE - 1][BLOCK_SIZE + HARRIS_MASK_SIZE - 1];
-    int halo_radius = HARRIS_MASK_SIZE / 2;
+
+    // collaboratively load the horizontal and vertical derivatives into shared memory, including halos
+    load2dSharedMemoryWithHalo<float>(ixShared[0], ix, halo_radius, width, height);
+    load2dSharedMemoryWithHalo<float>(iyShared[0], iy, halo_radius, width, height);
 
     int tx = threadIdx.x, ty = threadIdx.y;
     int tx_adj = tx + halo_radius;
     int ty_adj = ty + halo_radius;
     int x = tx + blockIdx.x * blockDim.x;
     int y = ty + blockIdx.y * blockDim.y;
-
-    // collaboratively load the horizontal and vertical derivatives into shared memory, including a halo
-    loadSharedMemoryWithHalo<float>(ixShared[0], ix, halo_radius, width, height);
-    loadSharedMemoryWithHalo<float>(iyShared[0], iy, halo_radius, width, height);
 
 
     // don't compute for the outermost layers of pixels
@@ -306,8 +202,11 @@ harrisThresholder(float3 *features, int *featureCount, float *response, float th
                   int height)
 {
     // define a block of shared memory large enough to hold the internal values and the halo
-    __shared__ float responseShared[BLOCK_SIZE + (HARRIS_DISTANCE * 2)][BLOCK_SIZE + (HARRIS_DISTANCE * 2)];
     int halo_radius = HARRIS_DISTANCE;
+    __shared__ float responseShared[BLOCK_SIZE + (HARRIS_DISTANCE * 2)][BLOCK_SIZE + (HARRIS_DISTANCE * 2)];
+
+    // load the input (including halo) into shared memory
+    load2dSharedMemoryWithHalo<float>(responseShared[0], response, halo_radius, width, height);
 
     int tx = threadIdx.x, ty = threadIdx.y;
     int tx_adj = tx + halo_radius;
@@ -315,14 +214,11 @@ harrisThresholder(float3 *features, int *featureCount, float *response, float th
     int x = tx + blockIdx.x * blockDim.x;
     int y = ty + blockIdx.y * blockDim.y;
 
-    loadSharedMemoryWithHalo<float>(responseShared[0], response, halo_radius, width, height);
-
     // don't calculate for the outermost layers of pixels
     if (x < 1 || y < 1 || x >= width - 1 || y >= height - 1)
     {
         return;
     }
-
 
     // Initial threshold check
     float r = responseShared[ty_adj][tx_adj];
@@ -351,6 +247,8 @@ harrisThresholder(float3 *features, int *featureCount, float *response, float th
         }
     }
 
+    // Check if there's space for another feature. Overflow is incredibly unlikely because the integer limit is much
+    // larger than the total number of pixels in any frame
     int featureSlot = atomicAdd(featureCount, 1);
     if (featureSlot < maxFeatures)
     {
@@ -379,12 +277,25 @@ __global__ void
 iterLucasKanadeSolver(float2 *flowVectors, float *ix, float *iy, unsigned char *frame, unsigned char *prevFrame,
                       float3 *features, int *featureCount, int width, int height)
 {
-    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    // define multiple shared memory blocks large enough to hold the internal values and the halos
+    int halo_radius = LK_WINDOW_SIZE / 2;
+    __shared__ float ixShared[BLOCK_SIZE + LK_WINDOW_SIZE - 1][BLOCK_SIZE + LK_WINDOW_SIZE - 1];
+    __shared__ float iyShared[BLOCK_SIZE + LK_WINDOW_SIZE - 1][BLOCK_SIZE + LK_WINDOW_SIZE - 1];
+
+    // collaboratively load the horizontal and vertical derivatives into shared memory, including halos
+    // todo MG - make this work with 1D blocks ?????
+    load2dSharedMemoryWithHalo<float>(ixShared[0], ix, halo_radius, width, height);
+    load2dSharedMemoryWithHalo<float>(iyShared[0], iy, halo_radius, width, height);
+
+    int tx = threadIdx.x, ty = threadIdx.y;
+    int tx_adj = tx + halo_radius;
+    int i = tx + blockIdx.x * blockDim.x;
     if (i >= *featureCount || features[i].z != 1)
     {
         return;
     }
 
+    // todo MG - maybe can be moved to any early returns, since we should store real data in the good case
     flowVectors[i] = {0.0f, 0.0f};
 
     int centerX = (int)features[i].x;
@@ -392,9 +303,6 @@ iterLucasKanadeSolver(float2 *flowVectors, float *ix, float *iy, unsigned char *
 
     float u = 0.0f;
     float v = 0.0f;
-
-    // 15x15 window, just like in the CPU version
-    int windowHalf = 7;
 
     for (int iteration = 0; iteration < LK_ITERATIONS; iteration++)
     {
@@ -404,9 +312,9 @@ iterLucasKanadeSolver(float2 *flowVectors, float *ix, float *iy, unsigned char *
         float sumIxt = 0.0f;
         float sumIyt = 0.0f;
 
-        for (int y = -windowHalf; y <= windowHalf; y++)
+        for (int y = -halo_radius; y <= halo_radius; y++)
         {
-            for (int x = -windowHalf; x <= windowHalf; x++)
+            for (int x = -halo_radius; x <= halo_radius; x++)
             {
                 int iterCenterX = centerX + x;
                 int iterCenterY = centerY + y;
@@ -456,8 +364,9 @@ iterLucasKanadeSolver(float2 *flowVectors, float *ix, float *iy, unsigned char *
         }
     }
 
-    flowVectors[i].x = u;
-    flowVectors[i].y = v;
+    flowVectors[i] = make_float2(u, v);
+    // flowVectors[i].x = u;
+    // flowVectors[i].y = v;
 }
 
 /**
@@ -492,10 +401,10 @@ lucasKanadeSolver(float2 *flowVectors, float *ix, float *iy, float *it, float3 *
     float sumIyt = 0;
 
     // 15x15 window, just like in the CPU version
-    int window_half = 7;
-    for (int y = -window_half; y <= window_half; y++)
+    int halo_radius = 7;
+    for (int y = -halo_radius; y <= halo_radius; y++)
     {
-        for (int x = -window_half; x <= window_half; x++)
+        for (int x = -halo_radius; x <= halo_radius; x++)
         {
             if ((centerX + x) < 0 || (centerX + x) >= width || (centerY + y) < 0 || (centerY + y) >= height)
             {
@@ -697,8 +606,8 @@ sparseLucasKanadeGPU(VideoInfo &video)
         cv::Mat output;
         cvtColor(video.frames[i], output, cv::COLOR_GRAY2BGR);
         drawSparseOpticalFlowGPU(output, mask, reinterpret_cast<cv::Vec3f *>(prevFrameFeatures),
-                           reinterpret_cast<cv::Vec3f *>(frameFeatures), featureCount, pt_colors,
-                           DRAW_CONTINUOUS_LINES);
+                                 reinterpret_cast<cv::Vec3f *>(frameFeatures), featureCount, pt_colors,
+                                 DRAW_CONTINUOUS_LINES);
 
         std::memcpy(prevFrameFeatures, frameFeatures, featureCount * sizeof(float3));
         video.outputFrames.push_back(output);

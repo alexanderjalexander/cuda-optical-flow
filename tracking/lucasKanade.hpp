@@ -5,6 +5,8 @@
 
 #include "../processing/video_io.hpp"
 
+#define BLOCK_SIZE 16
+
 #define DRAW_CONTINUOUS_LINES true
 
 #define MAX_FEATURES 500
@@ -16,6 +18,7 @@
 #define HARRIS_EPSILON 0.04
 #define HARRIS_DISTANCE 5
 
+#define LK_WINDOW_SIZE 15
 #define LK_EPSILON 0.03
 #define LK_ITERATIONS 10
 
