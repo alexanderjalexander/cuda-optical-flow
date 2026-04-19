@@ -25,7 +25,7 @@ main(int argc, char *argv[])
 {
     // Reading the videos
     std::filesystem::path current_dir = std::filesystem::current_path();
-    std::string file_input = "Slow-Traffic";
+    std::string file_input = "Plane-Dock";
     std::filesystem::path full_path = current_dir / "inputs" / (file_input + ".mp4");
     std::filesystem::path sparseGpuOutputPath = current_dir / "outputs" / (file_input + "-SparseGPU.mp4");
     std::filesystem::path sparseCpuOutputPath = current_dir / "outputs" / (file_input + "-SparseCPU.mp4");

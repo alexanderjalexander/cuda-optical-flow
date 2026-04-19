@@ -7,7 +7,7 @@ FORMATTER = clang-format
 FLOW_PROG = optflow
 FLOW_OBJS = timing/stopwatch.o tracking/cpu.o tracking/gpu.o processing/video_io.o processing/drawing.o main.o
 FLOW_SRCS = timing/stopwatch.cpp tracking/cpu.cpp tracking/gpu.cu processing/video_io.cpp processing/drawing.cpp main.cpp
-FLOW_FORMAT = $(FLOW_SRCS) timing/stopwatch.hpp tracking/lucasKanade.hpp
+FLOW_FORMAT = $(FLOW_SRCS) timing/stopwatch.hpp tracking/lucasKanade.hpp tracking/gpu_utilities.cuh processing/video_io.hpp processing/drawing.hpp
 
 all: ${FLOW_PROG}
 

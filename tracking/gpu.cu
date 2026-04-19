@@ -70,7 +70,8 @@ sobelFilter(float *ix, float *iy, unsigned char *frame, int width, int height)
     int global_index = y * width + x;
 
     // load the input (including halo) into shared memory
-    loadSharedMemoryWithHalo<unsigned char>(frameShared[0], frame, halo_radius, width, height);
+    load2dSharedMemoryWithHalo<unsigned char>(frameShared[0], frame, halo_radius, width, height);
+    __syncthreads();
 
     // =====================================
     // perform the actual calculation
@@ -145,6 +146,7 @@ harrisResponse(float *response, float *ix, float *iy, int width, int height)
     // collaboratively load the horizontal and vertical derivatives into shared memory, including halos
     load2dSharedMemoryWithHalo<float>(ixShared[0], ix, halo_radius, width, height);
     load2dSharedMemoryWithHalo<float>(iyShared[0], iy, halo_radius, width, height);
+    __syncthreads();
 
     int tx = threadIdx.x, ty = threadIdx.y;
     int tx_adj = tx + halo_radius;
@@ -207,6 +209,7 @@ harrisThresholder(float3 *features, int *featureCount, float *response, float th
 
     // load the input (including halo) into shared memory
     load2dSharedMemoryWithHalo<float>(responseShared[0], response, halo_radius, width, height);
+    __syncthreads();
 
     int tx = threadIdx.x, ty = threadIdx.y;
     int tx_adj = tx + halo_radius;
@@ -281,16 +284,20 @@ iterLucasKanadeSolver(float2 *flowVectors, float *ix, float *iy, unsigned char *
     int halo_radius = LK_WINDOW_SIZE / 2;
     __shared__ float ixShared[BLOCK_SIZE + LK_WINDOW_SIZE - 1][BLOCK_SIZE + LK_WINDOW_SIZE - 1];
     __shared__ float iyShared[BLOCK_SIZE + LK_WINDOW_SIZE - 1][BLOCK_SIZE + LK_WINDOW_SIZE - 1];
+    __shared__ unsigned char prevFrameShared[BLOCK_SIZE + LK_WINDOW_SIZE - 1][BLOCK_SIZE + LK_WINDOW_SIZE - 1];
 
     // collaboratively load the horizontal and vertical derivatives into shared memory, including halos
-    // todo MG - make this work with 1D blocks ?????
-    load2dSharedMemoryWithHalo<float>(ixShared[0], ix, halo_radius, width, height);
-    load2dSharedMemoryWithHalo<float>(iyShared[0], iy, halo_radius, width, height);
+    load2dSharedMemoryWithHalo1dBlock<float>(ixShared[0], ix, BLOCK_SIZE, halo_radius, width, height);
+    load2dSharedMemoryWithHalo1dBlock<float>(iyShared[0], iy, BLOCK_SIZE, halo_radius, width, height);
+    
+    // load the previous frame into shared memory, only considering the same indices that are used to access ix and iy
+    load2dSharedMemoryWithHalo1dBlock<unsigned char>(prevFrameShared[0], prevFrame, BLOCK_SIZE, halo_radius, width, height);
+    __syncthreads();
 
-    int tx = threadIdx.x, ty = threadIdx.y;
-    int tx_adj = tx + halo_radius;
-    int i = tx + blockIdx.x * blockDim.x;
-    if (i >= *featureCount || features[i].z != 1)
+    // identify the feature to work on
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    float3 feature = features[i];
+    if (i >= *featureCount || feature.z != 1)
     {
         return;
     }
@@ -298,8 +305,8 @@ iterLucasKanadeSolver(float2 *flowVectors, float *ix, float *iy, unsigned char *
     // todo MG - maybe can be moved to any early returns, since we should store real data in the good case
     flowVectors[i] = {0.0f, 0.0f};
 
-    int centerX = (int)features[i].x;
-    int centerY = (int)features[i].y;
+    int centerX = (int)feature.x;
+    int centerY = (int)feature.y;
 
     float u = 0.0f;
     float v = 0.0f;
@@ -319,6 +326,7 @@ iterLucasKanadeSolver(float2 *flowVectors, float *ix, float *iy, unsigned char *
                 int iterCenterX = centerX + x;
                 int iterCenterY = centerY + y;
 
+                // ignore when original location is out of frame bounds
                 if (iterCenterX < 0 || iterCenterX >= width || iterCenterY < 0 || iterCenterY >= height)
                 {
                     continue;
@@ -327,15 +335,15 @@ iterLucasKanadeSolver(float2 *flowVectors, float *ix, float *iy, unsigned char *
                 float warpedX = (float)iterCenterX + u;
                 float warpedY = (float)iterCenterY + v;
 
+                // ignore when warped location is out of frame bounds
                 if (warpedX < 0.0f || warpedX >= (float)width || warpedY < 0.0f || warpedY >= (float)height)
                 {
                     continue;
                 }
 
-                int currentCoord = iterCenterY * width + iterCenterX;
-                float gx = ix[currentCoord];
-                float gy = iy[currentCoord];
-                float it = bilinearInterpolate(frame, warpedX, warpedY, width, height) - (float)prevFrame[currentCoord];
+                float gx = ixShared[iterCenterY][iterCenterX];
+                float gy = iyShared[iterCenterY][iterCenterX];
+                float it = bilinearInterpolate(frame, warpedX, warpedY, width, height) - (float)prevFrameShared[iterCenterY][iterCenterX];
 
                 sumIxx += gx * gx;
                 sumIyy += gy * gy;
