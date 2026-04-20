@@ -1,12 +1,11 @@
+#include <cuda_runtime.h>
 #include <opencv2/opencv.hpp>
 #include <sys/stat.h>
-#include <cuda_runtime.h>
-
 
 #include "processing/video_io.hpp"
+#include "timing/statistics.hpp"
 #include "timing/stopwatch.hpp"
 #include "tracking/lucasKanade.hpp"
-#include "timing/statistics.hpp"
 
 #include <cstdlib>
 #include <filesystem>
@@ -25,9 +24,8 @@ usage(const char *progname)
 {
     fprintf(stderr, "Usage: %s [-%s] videoName\n", progname, flags);
     fprintf(stderr, "\t-s --> Run in 'Statistics Mode'\n");
-    fprintf(stderr,
-        "*NOTE* videoName is an input file within the /inputs folder, and must not"
-        "contain the video extension. It is expected to be a .mp4 file.\n");
+    fprintf(stderr, "*NOTE* videoName is an input file within the /inputs folder, and must not "
+                    "contain the video extension. It is expected to be a .mp4 file.\n");
 }
 
 int
@@ -45,19 +43,19 @@ main(int argc, char *argv[])
     {
         switch (opt)
         {
-            case 's':
-                std::cout << "Statistics Mode enabled." << std::endl;
-                statsModeEnabled = true;
-                break;
-            default:
-                usage(progname);
-                return EX_USAGE;
+        case 's':
+            std::cout << "Statistics Mode enabled." << std::endl;
+            statsModeEnabled = true;
+            break;
+        default:
+            usage(progname);
+            return EX_USAGE;
         }
     }
 
     // Parse options after arguments
     argc -= optind;
-	argv += optind;
+    argv += optind;
 
     if (argc != 1)
     {
@@ -65,12 +63,13 @@ main(int argc, char *argv[])
         return EX_USAGE;
     }
 
-    char* fileInputPath = argv[0];
+    char *fileInputPath = argv[0];
 
     // Reading the videos
     std::filesystem::path current_dir = std::filesystem::current_path();
     std::string file_input = fileInputPath;
     std::filesystem::path full_path = current_dir / "inputs" / (file_input + ".mp4");
+    // TODO - maybe allow the user to specify the full path to the input/output video to support other file formats
 
     VideoInfo sparseCpuVideo;
     VideoInfo sparseGpuVideo;
@@ -89,6 +88,15 @@ main(int argc, char *argv[])
     {
         std::cerr << "File at '" << full_path << "' does not exist." << std::endl;
         return EX_NOINPUT;
+    }
+
+    // Check if a GPU exists before running anything
+    int deviceCount = 0;
+    cudaError_t err = cudaGetDeviceCount(&deviceCount);
+    if (err != cudaSuccess || deviceCount == 0)
+    {
+        std::cerr << "No CUDA device available for GPU computation!" << std::endl;
+        return EXIT_FAILURE;
     }
 
     if (statsModeEnabled)

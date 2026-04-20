@@ -1,8 +1,9 @@
 #include "statistics.hpp"
-#include "../tracking/lucasKanade.hpp"
 
 #include <sys/mman.h>
 #include <sys/wait.h>
+
+#include "../tracking/lucasKanade.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -22,7 +23,9 @@ using namespace chrono;
  * @return
  */
 template <typename T>
-T calculatePercentile(const vector<T>& sortedData, double percentile) {
+T
+calculatePercentile(const vector<T> &sortedData, double percentile)
+{
     if (sortedData.empty())
     {
         return static_cast<T>(0.0);
@@ -61,22 +64,16 @@ printStatistics(char *functionName, ExecStats &exec)
     size_t count = exec.executionTimes.size();
     duration<double> minTime = exec.executionTimes[0];
     duration<double> maxTime = exec.executionTimes[count - 1];
-    double sum = reduce(
-        exec.executionTimes.begin(),
-        exec.executionTimes.end(),
-        duration<double>(0.0)
-    ).count();
+    double sum = reduce(exec.executionTimes.begin(), exec.executionTimes.end(), duration<double>(0.0)).count();
     double mean = sum / count;
 
-    double sqSum = reduce(
-        exec.executionTimes.begin(),
-        exec.executionTimes.end(),
-        duration<double>(0.0),
-        [mean](duration<double> a, duration<double> b) {
-            double diff = b.count() - mean;
-            return duration<double>(a.count() + diff * diff);
-        }
-    ).count();
+    double sqSum = reduce(exec.executionTimes.begin(), exec.executionTimes.end(), duration<double>(0.0),
+                          [mean](duration<double> a, duration<double> b)
+                          {
+                              double diff = b.count() - mean;
+                              return duration<double>(a.count() + diff * diff);
+                          })
+                       .count();
     double stdDev = sqrt(sqSum / count);
 
     duration<double> perc25 = calculatePercentile(exec.executionTimes, 25.0);
@@ -112,12 +109,9 @@ recordStatsSparseLucasKanade(bool onCPU, VideoInfo &video)
     char functionNameSparseLKCPU[] = "sparseLucasKanadeCPU";
     char functionNameSparseLKGPU[] = "sparseLucasKanadeGPU";
 
-    std::cout
-        << "===== "
-        << "Starting " << STATISTICS_ITERATIONS << " iterations of "
-        << (onCPU ? functionNameSparseLKCPU : functionNameSparseLKGPU)
-        << " ====="
-        << std::endl;
+    std::cout << "===== "
+              << "Starting " << STATISTICS_ITERATIONS << " iterations of "
+              << (onCPU ? functionNameSparseLKCPU : functionNameSparseLKGPU) << " =====" << std::endl;
 
     for (int i = 0; i < STATISTICS_ITERATIONS; i++)
     {
@@ -133,16 +127,14 @@ recordStatsSparseLucasKanade(bool onCPU, VideoInfo &video)
         auto stopTime = high_resolution_clock::now();
         duration<double> sec = stopTime - startTime;
 
-        std::fprintf(stdout, "--> %*d. ", (int) floor(log10(STATISTICS_ITERATIONS) + 1), i + 1);
+        std::fprintf(stdout, "--> %*d. ", (int)floor(log10(STATISTICS_ITERATIONS) + 1), i + 1);
         std::cout << sec.count() << " seconds" << std::endl;
         execTimesVec.push_back(sec);
 
         video.outputFrames.clear();
     }
 
-    ExecStats execStats = {
-        execTimesVec
-    };
+    ExecStats execStats = {execTimesVec};
 
     if (onCPU)
     {

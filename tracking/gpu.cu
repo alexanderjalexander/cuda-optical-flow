@@ -540,8 +540,8 @@ sparseLucasKanadeGPU(VideoInfo &video)
         cv::Mat output;
         cvtColor(video.frames[i], output, cv::COLOR_GRAY2BGR);
         drawSparseOpticalFlowGPU(output, mask, reinterpret_cast<cv::Vec3f *>(prevFrameFeatures),
-                           reinterpret_cast<cv::Vec3f *>(frameFeatures), featureCount, pt_colors,
-                           DRAW_CONTINUOUS_LINES);
+                                 reinterpret_cast<cv::Vec3f *>(frameFeatures), featureCount, pt_colors,
+                                 DRAW_CONTINUOUS_LINES);
 
         std::memcpy(prevFrameFeatures, frameFeatures, featureCount * sizeof(float3));
         video.outputFrames.push_back(output);

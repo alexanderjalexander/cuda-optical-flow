@@ -1,8 +1,10 @@
 # Project-specific ignores
 optflow
 build/
+outputs/
 .cache/
 *.log
+.vscode/
 
 # CUDA .gitignore template
 *.i
