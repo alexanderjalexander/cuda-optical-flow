@@ -22,7 +22,6 @@ using 2D blocks and grids, but not with 1D blocks and grids.
  * Core internal logic for loading a square tile of data into 2D shared memory including a halo for convolution
  * operations. Works regardless of block or grid shape based on provided indices within the corresponding tile.
  *
- * @param T The type of the data to be loaded.
  * @param shared  Device shared memory to load the data into, expected to point to the first element of a 2D array.
  * @param global Device global memory array containing input data.
  * @param halo_radius The radius of the halo to load around the internal tile (e.g. 1 for a 3x3 mask, 2 for a 5x5 mask,
@@ -35,8 +34,7 @@ using 2D blocks and grids, but not with 1D blocks and grids.
  * @param xGlobal The index of the current thread within the global memory in the X axis.
  * @param yGlobal The index of the current thread within the global memory in the Y axis.
  */
-template <typename T>
-__device__ void
+template <typename T> __device__ void
 load2dSharedMemoryCore(T *shared, T *global, int halo_radius, int widthGlobal, int heightGlobal, int tileSize, int tx,
                        int ty, int xGlobal, int yGlobal)
 {
@@ -137,7 +135,6 @@ load2dSharedMemoryCore(T *shared, T *global, int halo_radius, int widthGlobal, i
  * call syncthreads, so the caller is responsible for doing this to ensure all threads have finished loading their
  * data before any subsequent operations.
  *
- * @param T The type of the data to be loaded.
  * @param shared  Device shared memory to load the data into, expected to point to the first element of a 2D array.
  * @param global Device global memory array containing input data.
  * @param halo_radius The radius of the halo to load around the internal tile (e.g. 1 for a 3x3 mask, 2 for a 5x5 mask,
@@ -145,8 +142,7 @@ load2dSharedMemoryCore(T *shared, T *global, int halo_radius, int widthGlobal, i
  * @param widthGlobal The width (in elements) of the global memory data.
  * @param heightGlobal The height (in elements) of the global memory data.
  */
-template <typename T>
-__device__ void
+template <typename T> __device__ void
 load2dSharedMemoryWithHalo(T *shared, T *global, int halo_radius, int widthGlobal, int heightGlobal)
 {
     // with 2D blocks, tile == block
@@ -164,7 +160,6 @@ load2dSharedMemoryWithHalo(T *shared, T *global, int halo_radius, int widthGloba
  * corresponds to a data or halo element outside the original frame. Does NOT call syncthreads, so the caller is
  * responsible for doing this to ensure all threads have finished loading their data before any subsequent operations.
  *
- * @param T The type of the data to be loaded.
  * @param shared  Device shared memory to load the data into, expected to point to the first element of a 2D array.
  * @param global Device global memory array containing input data.
  * @param tileSize The size (both width and height) of the shared memory tile to be loaded, not including the halo.
@@ -173,8 +168,7 @@ load2dSharedMemoryWithHalo(T *shared, T *global, int halo_radius, int widthGloba
  * @param widthGlobal The width (in elements) of the global memory data.
  * @param heightGlobal The height (in elements) of the global memory data.
  */
-template <typename T>
-__device__ void
+template <typename T> __device__ void
 load2dSharedMemoryWithHalo1dBlock(T *shared, T *global, int tileSize, int halo_radius, int widthGlobal,
                                   int heightGlobal)
 {
@@ -189,7 +183,7 @@ load2dSharedMemoryWithHalo1dBlock(T *shared, T *global, int tileSize, int halo_r
     // calculate the thread location within the tile
     int tx = localIdx % tileSize;
     int ty = localIdx / tileSize;
-    
+
     // calculate the global index
     int xGlobal = tileX * tileSize + tx;
     int yGlobal = tileY * tileSize + ty;

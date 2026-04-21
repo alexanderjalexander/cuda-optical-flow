@@ -3,8 +3,9 @@
 
 #include "../processing/drawing.hpp"
 
-#include "gpu_utilities.cuh"
 #include "lucasKanade.hpp"
+
+#include "gpu_utilities.cuh"
 
 #include <stdio.h>
 
@@ -266,6 +267,10 @@ harrisThresholder(float3 *features, int *featureCount, float *response, float th
  * Kernel code to perform iterative Lucas Kanade on the features given between two
  * images.
  *
+ * Assumes that the block size used to initialize the kernel is the actual window
+ * size we go off of. Ideally, the block dimensions should be LK_WINDOW_HALF *
+ * LK_WINDOW_HALF.
+ *
  * @param flowVectors The flow directions we're attempting to store and run back.
  * @param ix Device memory storing Ix, the horizontal derivative.
  * @param iy Device memory storing Iy, the vertical derivative.
@@ -280,165 +285,162 @@ __global__ void
 iterLucasKanadeSolver(float2 *flowVectors, float *ix, float *iy, unsigned char *frame, unsigned char *prevFrame,
                       float3 *features, int *featureCount, int width, int height)
 {
-    // define multiple shared memory blocks large enough to hold the internal values and the halos
+    // usual per-thread registers/variables
+    int tx = threadIdx.x;
+    int ty = threadIdx.y;
+    int flatIdx = ty * blockDim.x + tx; // flat index w.r.t. shared memory
+
+    int featureNum = blockIdx.x; // grid is 1d array of blocks, each block is 2d array of threads
+
     int halo_radius = LK_WINDOW_SIZE / 2;
-    __shared__ float ixShared[BLOCK_SIZE + LK_WINDOW_SIZE - 1][BLOCK_SIZE + LK_WINDOW_SIZE - 1];
-    __shared__ float iyShared[BLOCK_SIZE + LK_WINDOW_SIZE - 1][BLOCK_SIZE + LK_WINDOW_SIZE - 1];
-    __shared__ unsigned char prevFrameShared[BLOCK_SIZE + LK_WINDOW_SIZE - 1][BLOCK_SIZE + LK_WINDOW_SIZE - 1];
 
-    // collaboratively load the horizontal and vertical derivatives into shared memory, including halos
-    load2dSharedMemoryWithHalo1dBlock<float>(ixShared[0], ix, BLOCK_SIZE, halo_radius, width, height);
-    load2dSharedMemoryWithHalo1dBlock<float>(iyShared[0], iy, BLOCK_SIZE, halo_radius, width, height);
-    
-    // load the previous frame into shared memory, only considering the same indices that are used to access ix and iy
-    load2dSharedMemoryWithHalo1dBlock<unsigned char>(prevFrameShared[0], prevFrame, BLOCK_SIZE, halo_radius, width, height);
-    __syncthreads();
+    int reductionStride = 1 << (31 - __clz(LK_WINDOW_SIZE * LK_WINDOW_SIZE) - 1);
 
-    // identify the feature to work on
-    int i = blockIdx.x * blockDim.x + threadIdx.x;
-    float3 feature = features[i];
-    if (i >= *featureCount || feature.z != 1)
+    // identify the feature to work on, early terminate if necessary
+    float3 feature = features[featureNum];
+    if (featureNum >= *featureCount || feature.z != 1)
     {
         return;
     }
 
-    // todo MG - maybe can be moved to any early returns, since we should store real data in the good case
-    flowVectors[i] = {0.0f, 0.0f};
+    // Coordinates on image, relative to feature and thread index.
+    // Assuming block size of 15x15, 7,7 should be the very middle.
+    int pixelX = (int)feature.x + tx - halo_radius;
+    int pixelY = (int)feature.y + ty - halo_radius;
 
-    int centerX = (int)feature.x;
-    int centerY = (int)feature.y;
+    // define multiple shared memory blocks large enough to hold the internal values and the halos
+    __shared__ float ixShared[LK_WINDOW_SIZE][LK_WINDOW_SIZE];
+    __shared__ float iyShared[LK_WINDOW_SIZE][LK_WINDOW_SIZE];
+    __shared__ float itShared[LK_WINDOW_SIZE][LK_WINDOW_SIZE];
+    __shared__ unsigned char prevFrameShared[LK_WINDOW_SIZE][LK_WINDOW_SIZE];
 
-    float u = 0.0f;
-    float v = 0.0f;
+    __shared__ float ixxShared[LK_WINDOW_SIZE * LK_WINDOW_SIZE];
+    __shared__ float iyyShared[LK_WINDOW_SIZE * LK_WINDOW_SIZE];
+    __shared__ float ixyShared[LK_WINDOW_SIZE * LK_WINDOW_SIZE];
+    __shared__ float ixtShared[LK_WINDOW_SIZE * LK_WINDOW_SIZE];
+    __shared__ float iytShared[LK_WINDOW_SIZE * LK_WINDOW_SIZE];
 
+    __shared__ float u, v, du, dv;
+
+    __shared__ bool invalidDet;
+
+    // Load with bounds checking - clamp to zero if out of bounds
+    if (pixelX >= 0 && pixelX < width && pixelY >= 0 && pixelY < height)
+    {
+        int globalIdx = pixelY * width + pixelX;
+        ixShared[ty][tx] = ix[globalIdx];
+        iyShared[ty][tx] = iy[globalIdx];
+        prevFrameShared[ty][tx] = prevFrame[globalIdx];
+    }
+    else
+    {
+        ixShared[ty][tx] = 0.0f;
+        iyShared[ty][tx] = 0.0f;
+        prevFrameShared[ty][tx] = 0;
+    }
+    itShared[ty][tx] = 0.0f;
+    ixxShared[flatIdx] = 0.0f;
+    iyyShared[flatIdx] = 0.0f;
+    ixyShared[flatIdx] = 0.0f;
+    ixtShared[flatIdx] = 0.0f;
+    iytShared[flatIdx] = 0.0f;
+
+    // Let thread 0 do this
+    if (tx == 0 && ty == 0)
+    {
+        u = 0.0f;
+        v = 0.0f;
+        du = 0.0f;
+        dv = 0.0f;
+        flowVectors[featureNum] = {0.0f, 0.0f};
+    }
+
+    __syncthreads();
+
+    // per-thread calculation of ixx, iyy, and ixy
+    ixxShared[flatIdx] = ixShared[ty][tx] * ixShared[ty][tx];
+    iyyShared[flatIdx] = iyShared[ty][tx] * iyShared[ty][tx];
+    ixyShared[flatIdx] = ixShared[ty][tx] * iyShared[ty][tx];
+    __syncthreads();
+
+    // Giant Reduction Sum for the three big sums, Ixx, Iyy, and Ixy
+    for (unsigned int stride = (LK_WINDOW_SIZE * LK_WINDOW_SIZE) / 2; stride >= 1; stride /= 2)
+    {
+        if (flatIdx < stride && flatIdx + stride < (LK_WINDOW_SIZE * LK_WINDOW_SIZE))
+        {
+            ixxShared[flatIdx] += ixxShared[flatIdx + stride];
+            iyyShared[flatIdx] += iyyShared[flatIdx + stride];
+            ixyShared[flatIdx] += ixyShared[flatIdx + stride];
+        }
+        __syncthreads();
+    }
+
+    // Giant Iteration Loop
     for (int iteration = 0; iteration < LK_ITERATIONS; iteration++)
     {
-        float sumIxx = 0.0f;
-        float sumIyy = 0.0f;
-        float sumIxy = 0.0f;
-        float sumIxt = 0.0f;
-        float sumIyt = 0.0f;
+        float warpedX = feature.x + u + (tx - LK_WINDOW_SIZE/2);
+        float warpedY = feature.y + v + (ty - LK_WINDOW_SIZE/2);
+        itShared[ty][tx] = bilinearInterpolate(frame, warpedX, warpedY, width, height) - (float) prevFrameShared[ty][tx];
 
-        for (int y = -halo_radius; y <= halo_radius; y++)
+        ixtShared[flatIdx] = ixShared[ty][tx] * itShared[ty][tx];
+        iytShared[flatIdx] = iyShared[ty][tx] * itShared[ty][tx];
+
+        __syncthreads();
+
+        // Giant Reduction Sum for the remaining big sums, Ixt and Iyt
+        for (unsigned int stride = (LK_WINDOW_SIZE * LK_WINDOW_SIZE) / 2; stride >= 1; stride /= 2)
         {
-            for (int x = -halo_radius; x <= halo_radius; x++)
+            if (flatIdx < stride && flatIdx + stride < (LK_WINDOW_SIZE * LK_WINDOW_SIZE))
             {
-                int iterCenterX = centerX + x;
-                int iterCenterY = centerY + y;
+                ixtShared[flatIdx] += ixtShared[flatIdx + stride];
+                iytShared[flatIdx] += iytShared[flatIdx + stride];
+            }
+            __syncthreads();
+        }
 
-                // ignore when original location is out of frame bounds
-                if (iterCenterX < 0 || iterCenterX >= width || iterCenterY < 0 || iterCenterY >= height)
-                {
-                    continue;
-                }
+        if (tx == 0 && ty == 0)
+        {
+            float det = ixxShared[0] * iyyShared[0] - (ixyShared[0] * ixyShared[0]);
+            invalidDet = (fabs(det) < 1e-6f);
+            if (!invalidDet)
+            {
+                du = ((iyyShared[0] * -ixtShared[0]) + (-ixyShared[0] * -iytShared[0])) / det;
+                dv = ((-ixyShared[0] * -ixtShared[0]) + (ixxShared[0] * -iytShared[0])) / det;
 
-                float warpedX = (float)iterCenterX + u;
-                float warpedY = (float)iterCenterY + v;
-
-                // ignore when warped location is out of frame bounds
-                if (warpedX < 0.0f || warpedX >= (float)width || warpedY < 0.0f || warpedY >= (float)height)
-                {
-                    continue;
-                }
-
-                float gx = ixShared[iterCenterY][iterCenterX];
-                float gy = iyShared[iterCenterY][iterCenterX];
-                float it = bilinearInterpolate(frame, warpedX, warpedY, width, height) - (float)prevFrameShared[iterCenterY][iterCenterX];
-
-                sumIxx += gx * gx;
-                sumIyy += gy * gy;
-                sumIxy += gx * gy;
-                sumIxt += gx * it;
-                sumIyt += gy * it;
+                u += du;
+                v += dv;
+            }
+            else {
+                features[featureNum].z = 0;
             }
         }
 
-        float det = sumIxx * sumIyy - (sumIxy * sumIxy);
-        if (fabs(det) < 1e-6f)
+        __syncthreads();
+
+        // Determinant Check
+        if (invalidDet)
         {
-            features[i].z = 0;
             return;
         }
 
-        float du = ((sumIyy * -sumIxt) + (-sumIxy * -sumIyt)) / det;
-        float dv = ((-sumIxy * -sumIxt) + (sumIxx * -sumIyt)) / det;
-
-        u += du;
-        v += dv;
-
+        // Convergence check
         if (du * du + dv * dv < LK_EPSILON)
         {
             break;
         }
+
+        __syncthreads();
     }
 
-    flowVectors[i] = make_float2(u, v);
-    // flowVectors[i].x = u;
-    // flowVectors[i].y = v;
-}
-
-/**
- * Kernel code to perform primitive Lucas Kanade on the features given between two images.
- *
- * @param flowVectors The flow directions we're attempting to store and run back.
- * @param ix Device memory storing Ix, the horizontal derivative.
- * @param iy Device memory storing Iy, the vertical derivative.
- * @param it Device memory storing It, the temporal derivative.
- * @param features The device memory storing all the features we wish to track.
- * @param featureCount How many features we have in actuality.
- * @param width The image's width.
- * @param height The image's height.
- */
-__global__ void
-lucasKanadeSolver(float2 *flowVectors, float *ix, float *iy, float *it, float3 *features, int *featureCount, int width,
-                  int height)
-{
-    int i = blockIdx.x * blockDim.x + threadIdx.x;
-    if (i >= *featureCount || features[i].z != 1)
+    if (tx == 0 && ty == 0)
     {
-        return;
+        flowVectors[featureNum] = make_float2(u, v);
     }
 
-    int centerX = features[i].x;
-    int centerY = features[i].y;
-
-    float sumIxx = 0;
-    float sumIyy = 0;
-    float sumIxy = 0;
-    float sumIxt = 0;
-    float sumIyt = 0;
-
-    // 15x15 window, just like in the CPU version
-    int halo_radius = 7;
-    for (int y = -halo_radius; y <= halo_radius; y++)
-    {
-        for (int x = -halo_radius; x <= halo_radius; x++)
-        {
-            if ((centerX + x) < 0 || (centerX + x) >= width || (centerY + y) < 0 || (centerY + y) >= height)
-            {
-                continue;
-            }
-            int currentCoord = ((centerY + y) * width) + (centerX + x);
-            sumIxx += ix[currentCoord] * ix[currentCoord];
-            sumIyy += iy[currentCoord] * iy[currentCoord];
-            sumIxy += ix[currentCoord] * iy[currentCoord];
-            sumIxt += ix[currentCoord] * it[currentCoord];
-            sumIyt += iy[currentCoord] * it[currentCoord];
-        }
-    }
-
-    // Calculation at the bottom of the "Concept" section:
-    // https://en.wikipedia.org/wiki/Lucas%E2%80%93Kanade_method#Concept
-    // expanded out.
-    float det = sumIxx * sumIyy - (sumIxy * sumIxy);
-    if (fabs(det) < 1e-6)
-    {
-        features[i].z = 0;
-        return;
-    }
-
-    flowVectors[i].x = ((sumIyy * -sumIxt) + (-sumIxy * -sumIyt)) / det;
-    flowVectors[i].y = ((-sumIxy * -sumIxt) + (sumIxx * -sumIyt)) / det;
+    /**
+     * Bugs:
+     * - TODO: Figure out why on earth the points are drifting ;-;
+     */
 }
 
 /**
@@ -586,8 +588,9 @@ sparseLucasKanadeGPU(VideoInfo &video)
     cudaMemcpy(prevFrameFeatures, deviceFrameFeatures, featureCount * sizeof(float3), cudaMemcpyDeviceToHost);
     std::vector<cv::Scalar> pt_colors = getRandomColors(featureCount);
 
-    dim3 featureBlockDim(BLOCK_SIZE * BLOCK_SIZE, 1, 1);
-    dim3 featureGridDim((int)ceil((float)featureCount / featureBlockDim.x), 1, 1);
+    // Each block is responsible for each feature.
+    dim3 featureBlockDim(LK_WINDOW_SIZE, LK_WINDOW_SIZE, 1);
+    dim3 featureGridDim(featureCount, 1, 1);
 
     // == Repeated Frame LK Procedure ==
 
