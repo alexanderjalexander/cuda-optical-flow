@@ -292,9 +292,7 @@ iterLucasKanadeSolver(float2 *flowVectors, float *ix, float *iy, unsigned char *
 
     int featureNum = blockIdx.x; // grid is 1d array of blocks, each block is 2d array of threads
 
-    int halo_radius = LK_WINDOW_SIZE / 2;
-
-    int reductionStride = 1 << (31 - __clz(LK_WINDOW_SIZE * LK_WINDOW_SIZE - 1));
+    int reductionStride = 1 << (31 - __clz(LK_WINDOW_WIDTH * LK_WINDOW_WIDTH - 1));
 
     // identify the feature to work on, early terminate if necessary
     float3 feature = features[featureNum];
@@ -305,20 +303,20 @@ iterLucasKanadeSolver(float2 *flowVectors, float *ix, float *iy, unsigned char *
 
     // Coordinates on image, relative to feature and thread index.
     // Assuming block size of 15x15, 7,7 should be the very middle.
-    int pixelX = (int)feature.x + tx - halo_radius;
-    int pixelY = (int)feature.y + ty - halo_radius;
+    int pixelX = (int)feature.x + tx - LK_WINDOW_WIDTH_HALF;
+    int pixelY = (int)feature.y + ty - LK_WINDOW_WIDTH_HALF;
 
     // define multiple shared memory blocks large enough to hold the internal values and the halos
-    __shared__ float ixShared[LK_WINDOW_SIZE][LK_WINDOW_SIZE];
-    __shared__ float iyShared[LK_WINDOW_SIZE][LK_WINDOW_SIZE];
-    __shared__ float itShared[LK_WINDOW_SIZE][LK_WINDOW_SIZE];
-    __shared__ unsigned char prevFrameShared[LK_WINDOW_SIZE][LK_WINDOW_SIZE];
+    __shared__ float ixShared[LK_WINDOW_WIDTH][LK_WINDOW_WIDTH];
+    __shared__ float iyShared[LK_WINDOW_WIDTH][LK_WINDOW_WIDTH];
+    __shared__ float itShared[LK_WINDOW_WIDTH][LK_WINDOW_WIDTH];
+    __shared__ unsigned char prevFrameShared[LK_WINDOW_WIDTH][LK_WINDOW_WIDTH];
 
-    __shared__ float ixxShared[LK_WINDOW_SIZE * LK_WINDOW_SIZE];
-    __shared__ float iyyShared[LK_WINDOW_SIZE * LK_WINDOW_SIZE];
-    __shared__ float ixyShared[LK_WINDOW_SIZE * LK_WINDOW_SIZE];
-    __shared__ float ixtShared[LK_WINDOW_SIZE * LK_WINDOW_SIZE];
-    __shared__ float iytShared[LK_WINDOW_SIZE * LK_WINDOW_SIZE];
+    __shared__ float ixxShared[LK_WINDOW_NUM];
+    __shared__ float iyyShared[LK_WINDOW_NUM];
+    __shared__ float ixyShared[LK_WINDOW_NUM];
+    __shared__ float ixtShared[LK_WINDOW_NUM];
+    __shared__ float iytShared[LK_WINDOW_NUM];
 
     __shared__ float u, v, du, dv;
 
@@ -366,7 +364,7 @@ iterLucasKanadeSolver(float2 *flowVectors, float *ix, float *iy, unsigned char *
     // Giant Reduction Sum for the three big sums, Ixx, Iyy, and Ixy
     for (unsigned int stride = reductionStride; stride >= 1; stride >>= 1)
     {
-        if (flatIdx < stride && (flatIdx + stride) < (LK_WINDOW_SIZE * LK_WINDOW_SIZE))
+        if (flatIdx < stride && (flatIdx + stride) < (LK_WINDOW_NUM))
         {
             ixxShared[flatIdx] += ixxShared[flatIdx + stride];
             iyyShared[flatIdx] += iyyShared[flatIdx + stride];
@@ -378,8 +376,8 @@ iterLucasKanadeSolver(float2 *flowVectors, float *ix, float *iy, unsigned char *
     // Giant Iteration Loop
     for (int iteration = 0; iteration < LK_ITERATIONS; iteration++)
     {
-        float warpedX = floorf(feature.x) + u + (tx - LK_WINDOW_SIZE/2);
-        float warpedY = floorf(feature.y) + v + (ty - LK_WINDOW_SIZE/2);
+        float warpedX = floorf(feature.x) + u + (tx - LK_WINDOW_WIDTH_HALF);
+        float warpedY = floorf(feature.y) + v + (ty - LK_WINDOW_WIDTH_HALF);
         itShared[ty][tx] = bilinearInterpolate(frame, warpedX, warpedY, width, height) - (float) prevFrameShared[ty][tx];
 
         ixtShared[flatIdx] = ixShared[ty][tx] * itShared[ty][tx];
@@ -390,7 +388,7 @@ iterLucasKanadeSolver(float2 *flowVectors, float *ix, float *iy, unsigned char *
         // Giant Reduction Sum for the remaining big sums, Ixt and Iyt
         for (unsigned int stride = reductionStride; stride >= 1; stride >>= 1)
         {
-            if (flatIdx < stride && (flatIdx + stride) < (LK_WINDOW_SIZE * LK_WINDOW_SIZE))
+            if (flatIdx < stride && (flatIdx + stride) < LK_WINDOW_NUM)
             {
                 ixtShared[flatIdx] += ixtShared[flatIdx + stride];
                 iytShared[flatIdx] += iytShared[flatIdx + stride];
@@ -584,7 +582,7 @@ sparseLucasKanadeGPU(VideoInfo &video)
     std::vector<cv::Scalar> pt_colors = getRandomColors(featureCount);
 
     // Each block is responsible for each feature.
-    dim3 featureBlockDim(LK_WINDOW_SIZE, LK_WINDOW_SIZE, 1);
+    dim3 featureBlockDim(LK_WINDOW_WIDTH, LK_WINDOW_WIDTH, 1);
     dim3 featureGridDim(featureCount, 1, 1);
 
     // == Repeated Frame LK Procedure ==

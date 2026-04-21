@@ -120,7 +120,7 @@ drawSparseOpticalFlowGPU(cv::Mat &output, cv::Mat &mask, cv::Vec3f *prevFeatures
     {
         if (features[i][2] == 1)
         {
-            cv::Point2f p0(features[i][0], features[i][1]);
+            cv::Point2f p0(prevFeatures[i][0], prevFeatures[i][1]);
             cv::Point2f p1(features[i][0], features[i][1]);
 
             if (drawContinuous)
