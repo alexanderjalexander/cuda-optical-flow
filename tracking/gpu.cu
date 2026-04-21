@@ -300,6 +300,8 @@ iterLucasKanadeSolver(float2 *flowVectors, float *ix, float *iy, unsigned char *
     {
         return;
     }
+    int fx = (int) feature.x;
+    int fy = (int) feature.y;
 
     // Coordinates on image, relative to feature and thread index.
     // Assuming block size of 15x15, 7,7 should be the very middle.
@@ -319,6 +321,8 @@ iterLucasKanadeSolver(float2 *flowVectors, float *ix, float *iy, unsigned char *
     __shared__ float iytShared[LK_WINDOW_NUM];
 
     __shared__ float u, v, du, dv;
+
+    __shared__ float det;
 
     __shared__ bool invalidDet;
 
@@ -344,18 +348,15 @@ iterLucasKanadeSolver(float2 *flowVectors, float *ix, float *iy, unsigned char *
     iytShared[flatIdx] = 0.0f;
 
     // Let thread 0 do this
-    if (tx == 0 && ty == 0)
+    if (flatIdx == 0)
     {
-        u = 0.0f;
-        v = 0.0f;
-        du = 0.0f;
-        dv = 0.0f;
+        u = v = du = dv = 0.0f;
         flowVectors[featureNum] = {0.0f, 0.0f};
     }
 
     __syncthreads();
 
-    // per-thread calculation of ixx, iyy, and ixy
+    // Per-thread calculation of ixx, iyy, and ixy
     ixxShared[flatIdx] = ixShared[ty][tx] * ixShared[ty][tx];
     iyyShared[flatIdx] = iyShared[ty][tx] * iyShared[ty][tx];
     ixyShared[flatIdx] = ixShared[ty][tx] * iyShared[ty][tx];
@@ -373,11 +374,27 @@ iterLucasKanadeSolver(float2 *flowVectors, float *ix, float *iy, unsigned char *
         __syncthreads();
     }
 
+    // Determinant check before calculation proceeds
+    if (flatIdx == 0)
+    {
+        det = ixxShared[0] * iyyShared[0] - (ixyShared[0] * ixyShared[0]);
+        invalidDet = (fabs(det) < 1e-6f);
+        if (invalidDet)
+        {
+            features[featureNum].z = 0;
+        }
+    }
+
+    if (invalidDet)
+    {
+        return;
+    }
+
     // Giant Iteration Loop
     for (int iteration = 0; iteration < LK_ITERATIONS; iteration++)
     {
-        float warpedX = floorf(feature.x) + u + (tx - LK_WINDOW_WIDTH_HALF);
-        float warpedY = floorf(feature.y) + v + (ty - LK_WINDOW_WIDTH_HALF);
+        float warpedX = fx + u + (tx - LK_WINDOW_WIDTH_HALF);
+        float warpedY = fy + v + (ty - LK_WINDOW_WIDTH_HALF);
         itShared[ty][tx] = bilinearInterpolate(frame, warpedX, warpedY, width, height) - (float) prevFrameShared[ty][tx];
 
         ixtShared[flatIdx] = ixShared[ty][tx] * itShared[ty][tx];
@@ -396,30 +413,16 @@ iterLucasKanadeSolver(float2 *flowVectors, float *ix, float *iy, unsigned char *
             __syncthreads();
         }
 
-        if (tx == 0 && ty == 0)
+        if (flatIdx == 0)
         {
-            float det = ixxShared[0] * iyyShared[0] - (ixyShared[0] * ixyShared[0]);
-            invalidDet = (fabs(det) < 1e-6f);
-            if (!invalidDet)
-            {
-                du = ((iyyShared[0] * -ixtShared[0]) + (-ixyShared[0] * -iytShared[0])) / det;
-                dv = ((-ixyShared[0] * -ixtShared[0]) + (ixxShared[0] * -iytShared[0])) / det;
+            du = ((iyyShared[0] * -ixtShared[0]) + (-ixyShared[0] * -iytShared[0])) / det;
+            dv = ((-ixyShared[0] * -ixtShared[0]) + (ixxShared[0] * -iytShared[0])) / det;
 
-                u += du;
-                v += dv;
-            }
-            else {
-                features[featureNum].z = 0;
-            }
+            u += du;
+            v += dv;
         }
 
         __syncthreads();
-
-        // Determinant Check
-        if (invalidDet)
-        {
-            return;
-        }
 
         // Convergence check
         if (du * du + dv * dv < LK_EPSILON)
@@ -430,7 +433,7 @@ iterLucasKanadeSolver(float2 *flowVectors, float *ix, float *iy, unsigned char *
         __syncthreads();
     }
 
-    if (tx == 0 && ty == 0)
+    if (flatIdx == 0)
     {
         flowVectors[featureNum] = make_float2(u, v);
     }
@@ -616,21 +619,34 @@ sparseLucasKanadeGPU(VideoInfo &video)
         std::memcpy(prevFrameFeatures, frameFeatures, featureCount * sizeof(float3));
         video.outputFrames.push_back(output);
 
-        // TODO: Gaussian Weighted Average
-        // 2:00 - https://www.youtube.com/watch?v=79Ty2Kkivvc
-        // TODO: Coarse-To-Fine
-        // 2:55 - https://www.youtube.com/watch?v=79Ty2Kkivvc
-        // TODO: If Features get low, then recalculate them.
-
         // TODO: consider dense might be faster and possibly more parallelizable???
         // - Every feature in DLK is just... every pixel... and it's the same.
         // - Then we just change how we display the output to be like a heatmap or smth
 
         /**
-         * Possible Optimizations To Consider
-         * - Shared Memory
-         * - Texture Memory
-         * - 1 Kernel, calculating certain steps on the fly with device specific functions
+         * Algorithmic Considerations
+         * - TODO: Gaussian Weighted Average (2:00 - https://www.youtube.com/watch?v=79Ty2Kkivvc)
+         * - TODO: Coarse-To-Fine            (2:55 - https://www.youtube.com/watch?v=79Ty2Kkivvc)
+         * - TODO: Dynamic Feature Recalculation
+         *   - If we lose a lot of features, recalculate and add new ones into our feature matrix
+         */
+
+        /**
+         * Optimization/Efficiency Considerations
+         * - TODO_DONE: Shared Memory
+         * - TODO: Texture Memory
+         * - TODO: Merging Kernels
+         *   - Sobel into LK Solver
+         *   - Tracking Points
+         *   - Output frame drawing in another kernel??
+         * - TODO: Batched Frame Loading
+         * - TODO: Warp-level primitives???
+         * - TODO: Register caching?
+         */
+
+        /**
+         * Bugs
+         * - TODO: Plane-Dock.mp4 on laptop causes entire Fedora OS to freeze
          */
     }
 
