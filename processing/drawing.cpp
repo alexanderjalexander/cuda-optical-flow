@@ -36,8 +36,9 @@ getRandomColors(int num)
  * next.
  */
 void
-drawSparseOpticalFlow(cv::Mat &output, cv::Mat &mask, const std::vector<cv::Point2f> &p0, const std::vector<cv::Point2f> &p1,
-                const std::vector<uchar> &status, const std::vector<cv::Scalar> &colors, bool drawContinuous)
+drawSparseOpticalFlow(cv::Mat &output, cv::Mat &mask, const std::vector<cv::Point2f> &p0,
+                      const std::vector<cv::Point2f> &p1, const std::vector<uchar> &status,
+                      const std::vector<cv::Scalar> &colors, bool drawContinuous)
 {
     for (uint j = 0; j < p0.size(); j++)
     {
@@ -72,8 +73,9 @@ drawSparseOpticalFlow(cv::Mat &output, cv::Mat &mask, const std::vector<cv::Poin
  * @param p1 A vector representing the second frame's 2D point features.
  * @param status The status of the points.
  */
-void drawDenseOpticalFlow(cv::Mat &output, const std::vector<cv::Point2f> &p0, const std::vector<cv::Point2f> &p1,
-                    const std::vector<uchar> &status)
+void
+drawDenseOpticalFlow(cv::Mat &output, const std::vector<cv::Point2f> &p0, const std::vector<cv::Point2f> &p1,
+                     const std::vector<uchar> &status)
 {
     for (size_t i = 0; i < p0.size(); i++)
     {
@@ -82,7 +84,7 @@ void drawDenseOpticalFlow(cv::Mat &output, const std::vector<cv::Point2f> &p0, c
             float dx = p1[i].x - p0[i].x;
             float dy = p1[i].y - p0[i].y;
 
-            float magnitude = std::sqrtf(dx*dx + dy*dy);
+            float magnitude = std::sqrtf(dx * dx + dy * dy);
             float angle = std::atan2f(dy, dx);
 
             float hue = angle * (180.0f / CV_PI) / 2.0f;
@@ -93,7 +95,7 @@ void drawDenseOpticalFlow(cv::Mat &output, const std::vector<cv::Point2f> &p0, c
             cv::Mat bgr;
             cv::cvtColor(hsv, bgr, cv::COLOR_HSV2BGR);
 
-            cv::circle(output, p1[i], 1, bgr.at<cv::Vec3b>(0,0), -1);
+            cv::circle(output, p1[i], 1, bgr.at<cv::Vec3b>(0, 0), -1);
         }
     }
 }
@@ -114,7 +116,7 @@ void drawDenseOpticalFlow(cv::Mat &output, const std::vector<cv::Point2f> &p0, c
  */
 void
 drawSparseOpticalFlowGPU(cv::Mat &output, cv::Mat &mask, cv::Vec3f *prevFeatures, cv::Vec3f *features, int featureCount,
-                   const std::vector<cv::Scalar> &colors, bool drawContinuous)
+                         const std::vector<cv::Scalar> &colors, bool drawContinuous)
 {
     for (uint i = 0; i < featureCount; i++)
     {

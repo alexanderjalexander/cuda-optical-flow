@@ -558,8 +558,6 @@ sparseLucasKanadeGPU(VideoInfo &video)
     harrisResponse<<<gridDim, blockDim>>>(deviceResponse, deviceIx, deviceIy, width, height);
     cudaDeviceSynchronize();
 
-    printf("ok we're fine\n");
-
     // == Threshold Calculations w/ Thrust ==
 
     thrust::device_ptr<float> responsePtr(deviceResponse);
@@ -608,6 +606,8 @@ sparseLucasKanadeGPU(VideoInfo &video)
                                                                   deviceFlowVectors, width, height);
         cudaDeviceSynchronize();
 
+        // TODO: consider possibly abstracting the drawing to the GPU?
+        // But then we still need to copy the output frame... argh...
         cudaMemcpy(frameFeatures, deviceFrameFeatures, featureCount * sizeof(float3), cudaMemcpyDeviceToHost);
 
         cv::Mat output;
