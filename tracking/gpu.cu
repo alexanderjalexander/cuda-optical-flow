@@ -640,6 +640,8 @@ sparseLucasKanadeGPU(VideoInfo &video)
          *   - Tracking Points
          *   - Output frame drawing in another kernel??
          * - TODO: Batched Frame Loading
+         * - TODO: Asynchronous Memory Loading
+         * - TODO: CUDA Streams
          * - TODO: Warp-level primitives???
          * - TODO: Register caching?
          */
