@@ -294,7 +294,7 @@ iterLucasKanadeSolver(float2 *flowVectors, float *ix, float *iy, unsigned char *
 
     int halo_radius = LK_WINDOW_SIZE / 2;
 
-    int reductionStride = 1 << (31 - __clz(LK_WINDOW_SIZE * LK_WINDOW_SIZE) - 1);
+    int reductionStride = 1 << (31 - __clz(LK_WINDOW_SIZE * LK_WINDOW_SIZE - 1));
 
     // identify the feature to work on, early terminate if necessary
     float3 feature = features[featureNum];
@@ -364,9 +364,9 @@ iterLucasKanadeSolver(float2 *flowVectors, float *ix, float *iy, unsigned char *
     __syncthreads();
 
     // Giant Reduction Sum for the three big sums, Ixx, Iyy, and Ixy
-    for (unsigned int stride = (LK_WINDOW_SIZE * LK_WINDOW_SIZE) / 2; stride >= 1; stride /= 2)
+    for (unsigned int stride = reductionStride; stride >= 1; stride >>= 1)
     {
-        if (flatIdx < stride && flatIdx + stride < (LK_WINDOW_SIZE * LK_WINDOW_SIZE))
+        if (flatIdx < stride && (flatIdx + stride) < (LK_WINDOW_SIZE * LK_WINDOW_SIZE))
         {
             ixxShared[flatIdx] += ixxShared[flatIdx + stride];
             iyyShared[flatIdx] += iyyShared[flatIdx + stride];
@@ -378,8 +378,8 @@ iterLucasKanadeSolver(float2 *flowVectors, float *ix, float *iy, unsigned char *
     // Giant Iteration Loop
     for (int iteration = 0; iteration < LK_ITERATIONS; iteration++)
     {
-        float warpedX = feature.x + u + (tx - LK_WINDOW_SIZE/2);
-        float warpedY = feature.y + v + (ty - LK_WINDOW_SIZE/2);
+        float warpedX = floorf(feature.x) + u + (tx - LK_WINDOW_SIZE/2);
+        float warpedY = floorf(feature.y) + v + (ty - LK_WINDOW_SIZE/2);
         itShared[ty][tx] = bilinearInterpolate(frame, warpedX, warpedY, width, height) - (float) prevFrameShared[ty][tx];
 
         ixtShared[flatIdx] = ixShared[ty][tx] * itShared[ty][tx];
@@ -388,9 +388,9 @@ iterLucasKanadeSolver(float2 *flowVectors, float *ix, float *iy, unsigned char *
         __syncthreads();
 
         // Giant Reduction Sum for the remaining big sums, Ixt and Iyt
-        for (unsigned int stride = (LK_WINDOW_SIZE * LK_WINDOW_SIZE) / 2; stride >= 1; stride /= 2)
+        for (unsigned int stride = reductionStride; stride >= 1; stride >>= 1)
         {
-            if (flatIdx < stride && flatIdx + stride < (LK_WINDOW_SIZE * LK_WINDOW_SIZE))
+            if (flatIdx < stride && (flatIdx + stride) < (LK_WINDOW_SIZE * LK_WINDOW_SIZE))
             {
                 ixtShared[flatIdx] += ixtShared[flatIdx + stride];
                 iytShared[flatIdx] += iytShared[flatIdx + stride];
@@ -436,11 +436,6 @@ iterLucasKanadeSolver(float2 *flowVectors, float *ix, float *iy, unsigned char *
     {
         flowVectors[featureNum] = make_float2(u, v);
     }
-
-    /**
-     * Bugs:
-     * - TODO: Figure out why on earth the points are drifting ;-;
-     */
 }
 
 /**
