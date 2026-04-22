@@ -50,24 +50,27 @@ sparseLucasKanadeCPU(VideoInfo &video)
         vector<uchar> status;
         vector<float> err;
         TermCriteria criteria = TermCriteria((TermCriteria::COUNT) + (TermCriteria::EPS), LK_ITERATIONS, LK_EPSILON);
-        calcOpticalFlowPyrLK(old_frame, frame, p0, p1, status, err, Size(15, 15), 2, criteria);
+        calcOpticalFlowPyrLK(old_frame, frame, p0, p1, status, err, Size(LK_WINDOW_WIDTH, LK_WINDOW_WIDTH), 2,
+                             criteria);
 
         drawSparseOpticalFlow(output, mask, p0, p1, status, pt_colors, DRAW_CONTINUOUS_LINES);
 
         video.outputFrames.push_back(output);
         old_frame = frame.clone();
 
-        // Frame Recalculation Logic
+        // Checking if points have exited the space, and removing them.
         vector<Point2f> good_new;
+        vector<Scalar> good_colors;
         for (uint j = 0; j < p0.size(); j++)
         {
             if (status[j] == 1)
             {
                 good_new.push_back(p1[j]);
+                good_colors.push_back(pt_colors[j]);
             }
         }
-
         p0 = good_new;
+        pt_colors = good_colors;
 
         // Point replenishment
         // if (p0.size() < initialFeatures * 0.7)
