@@ -1,5 +1,8 @@
 #include "drawing.hpp"
 
+#define MIN_CIRCLE_RAD 3
+#define MIN_LINE_RAD 2
+
 /**
  * Makes a size-specified, random array of colors.
  *
@@ -40,14 +43,20 @@ drawSparseOpticalFlow(cv::Mat &output, cv::Mat &mask, const std::vector<cv::Poin
                       const std::vector<cv::Point2f> &p1, const std::vector<uchar> &status,
                       const std::vector<cv::Scalar> &colors, bool drawContinuous)
 {
+    int width = output.cols;
+    int height = output.rows;
+    int minMeasure = std::min(width, height);
+    int circleRadius = std::max(MIN_CIRCLE_RAD, (minMeasure/360)*MIN_CIRCLE_RAD);
+    int lineRadius = std::max(MIN_LINE_RAD, (minMeasure/360)*MIN_LINE_RAD);
+
     for (uint j = 0; j < p0.size(); j++)
     {
         if (status[j] == 1)
         {
             if (drawContinuous)
             {
-                line(mask, p1[j], p0[j], colors[j], 2);
-                circle(output, p1[j], 5, colors[j], -1);
+                line(mask, p1[j], p0[j], colors[j], lineRadius);
+                circle(output, p1[j], circleRadius, colors[j], -1);
             }
             else
             {
@@ -118,6 +127,12 @@ void
 drawSparseOpticalFlowGPU(cv::Mat &output, cv::Mat &mask, cv::Vec3f *prevFeatures, cv::Vec3f *features, int featureCount,
                          const std::vector<cv::Scalar> &colors, bool drawContinuous)
 {
+    int width = output.cols;
+    int height = output.rows;
+    int minMeasure = std::min(width, height);
+    int circleRadius = std::max(MIN_CIRCLE_RAD, (minMeasure/360)*MIN_CIRCLE_RAD);
+    int lineRadius = std::max(MIN_LINE_RAD, (minMeasure/360)*MIN_LINE_RAD);
+
     for (uint i = 0; i < featureCount; i++)
     {
         if (features[i][2] == 1)
@@ -127,8 +142,8 @@ drawSparseOpticalFlowGPU(cv::Mat &output, cv::Mat &mask, cv::Vec3f *prevFeatures
 
             if (drawContinuous)
             {
-                line(mask, p1, p0, colors[i], 2);
-                circle(output, p1, 5, colors[i], -1);
+                line(mask, p1, p0, colors[i], lineRadius);
+                circle(output, p1, circleRadius, colors[i], -1);
             }
             else
             {
