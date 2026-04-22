@@ -191,10 +191,13 @@ harrisThresholder(float3 *features, int *featureCount, float *response, float th
 
     // Check if there's space for another feature. Overflow is incredibly unlikely because the integer limit is much
     // larger than the total number of pixels in any frame
-    int featureSlot = atomicAdd(featureCount, 1);
-    if (featureSlot < maxFeatures)
+    if (*featureCount < maxFeatures)
     {
-        features[featureSlot] = make_float3(x, y, 1);
+        int featureSlot = atomicAdd(featureCount, 1);
+        if (featureSlot < maxFeatures)
+        {
+            features[featureSlot] = make_float3(x, y, 1);
+        }
     }
 }
 
@@ -468,7 +471,6 @@ sparseLucasKanadeGPU(VideoInfo &video)
     cudaMemcpy(&featureCount, deviceFrameFeatureCount, sizeof(int), cudaMemcpyDeviceToHost);
     /**
      * Below line is needed to prevent CUDA from accessing bad memory, otherwise we'll have no results.
-     * Segfaults seem to be... silent? When we exceeded this, every single status was turning into 1.
      */
     featureCount = min(featureCount, MAX_FEATURES);
     float3 *prevFrameFeatures = (float3 *)calloc(featureCount, sizeof(float3));
@@ -484,8 +486,10 @@ sparseLucasKanadeGPU(VideoInfo &video)
 
     for (int i = 1; i < video.frames.size(); i++)
     {
-        // Switch Frames
-        cudaMemcpy(devicePrevFrame, deviceFrame, size, cudaMemcpyDeviceToDevice);
+        // Switch Frames using pointer swapping
+        unsigned char *temp = devicePrevFrame;
+        devicePrevFrame = deviceFrame;
+        deviceFrame = temp;
         cudaMemcpy(deviceFrame, video.frames[i].data, size, cudaMemcpyHostToDevice);
 
         // Obtain Lucas Kanade Solve on 1 dimensional grid/block array
