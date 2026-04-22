@@ -5,7 +5,8 @@ IndentWidth: 4
 UseTab: false
 InsertBraces: true
 IndentCaseBlocks: false
-IndentAccessModifiers: true
+IndentAccessModifiers: false
+AccessModifierOffset: -4
 BreakBeforeBraces: Allman
 MaxEmptyLinesToKeep: 2
 IncludeBlocks: Regroup

@@ -522,18 +522,9 @@ sparseLucasKanadeGPU(VideoInfo &video)
          * Optimization/Efficiency Considerations
          * - TODO_DONE: Shared Memory
          * - TODO: Texture Memory
-         * - TODO: Merging Kernels
-         *   - Output frame drawing in another kernel??
          * - TODO: Batched Frame Loading
          * - TODO: Asynchronous Memory Loading
          * - TODO: CUDA Streams
-         * - TODO: Warp-level primitives???
-         * - TODO: Register caching?
-         */
-
-        /**
-         * Bugs
-         * - TODO: Plane-Dock.mp4 on laptop causes entire Fedora OS to freeze
          */
     }
 

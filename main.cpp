@@ -128,6 +128,7 @@ main(int argc, char *argv[])
         }
         stopStopwatch();
 
+        // Super necessary for the sake of preventing excessive memory-hogging
         video.outputFrames.clear();
 
         // GPU Lucas Kanade

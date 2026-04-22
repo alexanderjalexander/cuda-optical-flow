@@ -46,8 +46,8 @@ drawSparseOpticalFlow(cv::Mat &output, cv::Mat &mask, const std::vector<cv::Poin
     int width = output.cols;
     int height = output.rows;
     int minMeasure = std::min(width, height);
-    int circleRadius = std::max(MIN_CIRCLE_RAD, (minMeasure/360)*MIN_CIRCLE_RAD);
-    int lineRadius = std::max(MIN_LINE_RAD, (minMeasure/360)*MIN_LINE_RAD);
+    int circleRadius = std::max(MIN_CIRCLE_RAD, (minMeasure / 360) * MIN_CIRCLE_RAD);
+    int lineRadius = std::max(MIN_LINE_RAD, (minMeasure / 360) * MIN_LINE_RAD);
 
     for (uint j = 0; j < p0.size(); j++)
     {
@@ -130,8 +130,8 @@ drawSparseOpticalFlowGPU(cv::Mat &output, cv::Mat &mask, cv::Vec3f *prevFeatures
     int width = output.cols;
     int height = output.rows;
     int minMeasure = std::min(width, height);
-    int circleRadius = std::max(MIN_CIRCLE_RAD, (minMeasure/360)*MIN_CIRCLE_RAD);
-    int lineRadius = std::max(MIN_LINE_RAD, (minMeasure/360)*MIN_LINE_RAD);
+    int circleRadius = std::max(MIN_CIRCLE_RAD, (minMeasure / 360) * MIN_CIRCLE_RAD);
+    int lineRadius = std::max(MIN_LINE_RAD, (minMeasure / 360) * MIN_LINE_RAD);
 
     for (uint i = 0; i < featureCount; i++)
     {
