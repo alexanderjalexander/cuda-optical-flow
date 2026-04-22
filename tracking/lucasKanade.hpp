@@ -5,6 +5,7 @@
 
 #include "../processing/video_io.hpp"
 
+// Good, universal block size.
 #define BLOCK_SIZE 16
 
 #define DRAW_CONTINUOUS_LINES true
@@ -13,8 +14,10 @@
 #define QUALITY_LEVEL 0.01
 
 #define SOBEL_MASK_SIZE 3
+#define SOBEL_MASK_RAD (SOBEL_MASK_SIZE / 2)
 
 #define HARRIS_MASK_SIZE 5
+#define HARRIS_MASK_RAD (HARRIS_MASK_SIZE / 2)
 #define HARRIS_EPSILON 0.04
 #define HARRIS_DISTANCE 5
 

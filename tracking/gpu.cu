@@ -138,9 +138,7 @@ __global__ void
 harrisResponse(float *response, unsigned char *frame, int width, int height)
 {
     // constant definitions for my own sanity
-    const int HARRIS_RAD = 2;
-    const int SOBEL_RAD = 1;
-    const int TOTAL_HALO = HARRIS_RAD + SOBEL_RAD;
+    const int TOTAL_HALO = HARRIS_MASK_RAD + SOBEL_MASK_RAD;
 
     // standard variable definitions, like always
     int tx = threadIdx.x, ty = threadIdx.y;
@@ -149,23 +147,23 @@ harrisResponse(float *response, unsigned char *frame, int width, int height)
 
     // define multiple shared memory blocks large enough to hold the internal values and the halos
     __shared__ unsigned char frameShared[BLOCK_SIZE + (2 * TOTAL_HALO)][BLOCK_SIZE + (2 * TOTAL_HALO)];
-    __shared__ float ixShared[BLOCK_SIZE + (2 * HARRIS_RAD)][BLOCK_SIZE + (2 * HARRIS_RAD)];
-    __shared__ float iyShared[BLOCK_SIZE + (2 * HARRIS_RAD)][BLOCK_SIZE + (2 * HARRIS_RAD)];
+    __shared__ float ixShared[BLOCK_SIZE + (2 * HARRIS_MASK_RAD)][BLOCK_SIZE + (2 * HARRIS_MASK_RAD)];
+    __shared__ float iyShared[BLOCK_SIZE + (2 * HARRIS_MASK_RAD)][BLOCK_SIZE + (2 * HARRIS_MASK_RAD)];
 
     // collaboratively load the horizontal and vertical derivatives into shared memory, including halos
     load2dSharedMemoryWithHalo<unsigned char>((unsigned char*)frameShared, frame, TOTAL_HALO, width, height);
     __syncthreads();
 
     // on the fly derivative calculations
-    int derivWindowSize = BLOCK_SIZE + (2 * HARRIS_RAD);
+    int derivWindowSize = BLOCK_SIZE + (2 * HARRIS_MASK_RAD);
     for (int i = ty; i < derivWindowSize; i += BLOCK_SIZE)
     {
         for (int j = tx; j < derivWindowSize; j += BLOCK_SIZE)
         {
             // t_idx = 0,0. We'll need the sobel derivative w.r.t. 1,1.
             // It'll then go to 0,16. then 16,0. then 16,16
-            int fsY = i + SOBEL_RAD;
-            int fsX = j + SOBEL_RAD;
+            int fsY = i + SOBEL_MASK_RAD;
+            int fsX = j + SOBEL_MASK_RAD;
 
             float dx = (-1.0f * frameShared[fsY-1][fsX-1]) + (-2.0f * frameShared[fsY][fsX-1]) + (-1.0f * frameShared[fsY+1][fsX-1]) +
                        (1.0f * frameShared[fsY-1][fsX+1]) + (2.0f * frameShared[fsY][fsX+1]) + (1.0f * frameShared[fsY+1][fsX+1]);
@@ -180,7 +178,7 @@ harrisResponse(float *response, unsigned char *frame, int width, int height)
     __syncthreads();
 
     // don't compute for the outermost layers of pixels
-    if (x >= width || y >= height)
+    if (x <= TOTAL_HALO || y <= TOTAL_HALO || x >= width - TOTAL_HALO || y >= height - TOTAL_HALO)
     {
         return;
     }
@@ -188,11 +186,11 @@ harrisResponse(float *response, unsigned char *frame, int width, int height)
     float sumIxx = 0, sumIyy = 0, sumIxy = 0;
 
     // Creating the sum matrices for each pixel
-    int tx_adj = tx + HARRIS_RAD;
-    int ty_adj = ty + HARRIS_RAD;
-    for (int dy = -HARRIS_RAD; dy <= HARRIS_RAD; dy++)
+    int tx_adj = tx + HARRIS_MASK_RAD;
+    int ty_adj = ty + HARRIS_MASK_RAD;
+    for (int dy = -HARRIS_MASK_RAD; dy <= HARRIS_MASK_RAD; dy++)
     {
-        for (int dx = -HARRIS_RAD; dx <= HARRIS_RAD; dx++)
+        for (int dx = -HARRIS_MASK_RAD; dx <= HARRIS_MASK_RAD; dx++)
         {
             float gx = ixShared[ty_adj + dy][tx_adj + dx];
             float gy = iyShared[ty_adj + dy][tx_adj + dx];
