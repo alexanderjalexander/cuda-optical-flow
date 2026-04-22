@@ -130,49 +130,69 @@ temporalDifference(float *it, unsigned char *prevFrame, unsigned char *frame, in
  * Kernel code to obtain an image's Harris Response given the sobel derivatives.
  *
  * @param response Device memory to store the initial Harris response.
- * @param ix Device memory containing Ix, the horizontal derivative.
- * @param iy Device memory containing Iy, the vertical derivative.
+ * @param frame Device memory containing the image to obtain the Harris response on.
  * @param width The image's width.
  * @param height The image's height.
  */
 __global__ void
-harrisResponse(float *response, float *ix, float *iy, int width, int height)
+harrisResponse(float *response, unsigned char *frame, int width, int height)
 {
-    // TODO: Instantiate ixShared and iyShared utilizing the previous frame
+    // constant definitions for my own sanity
+    const int HARRIS_RAD = 2;
+    const int SOBEL_RAD = 1;
+    const int TOTAL_HALO = HARRIS_RAD + SOBEL_RAD;
 
-    // define multiple shared memory blocks large enough to hold the internal values and the halos
-    int halo_radius = HARRIS_MASK_SIZE / 2;
-    __shared__ float ixShared[BLOCK_SIZE + HARRIS_MASK_SIZE - 1][BLOCK_SIZE + HARRIS_MASK_SIZE - 1];
-    __shared__ float iyShared[BLOCK_SIZE + HARRIS_MASK_SIZE - 1][BLOCK_SIZE + HARRIS_MASK_SIZE - 1];
-
-    // collaboratively load the horizontal and vertical derivatives into shared memory, including halos
-    load2dSharedMemoryWithHalo<float>(ixShared[0], ix, halo_radius, width, height);
-    load2dSharedMemoryWithHalo<float>(iyShared[0], iy, halo_radius, width, height);
-    __syncthreads();
-
+    // standard variable definitions, like always
     int tx = threadIdx.x, ty = threadIdx.y;
-    int tx_adj = tx + halo_radius;
-    int ty_adj = ty + halo_radius;
     int x = tx + blockIdx.x * blockDim.x;
     int y = ty + blockIdx.y * blockDim.y;
 
+    // define multiple shared memory blocks large enough to hold the internal values and the halos
+    __shared__ unsigned char frameShared[BLOCK_SIZE + (2 * TOTAL_HALO)][BLOCK_SIZE + (2 * TOTAL_HALO)];
+    __shared__ float ixShared[BLOCK_SIZE + (2 * HARRIS_RAD)][BLOCK_SIZE + (2 * HARRIS_RAD)];
+    __shared__ float iyShared[BLOCK_SIZE + (2 * HARRIS_RAD)][BLOCK_SIZE + (2 * HARRIS_RAD)];
+
+    // collaboratively load the horizontal and vertical derivatives into shared memory, including halos
+    load2dSharedMemoryWithHalo<unsigned char>((unsigned char*)frameShared, frame, TOTAL_HALO, width, height);
+    __syncthreads();
+
+    // on the fly derivative calculations
+    int derivWindowSize = BLOCK_SIZE + (2 * HARRIS_RAD);
+    for (int i = ty; i < derivWindowSize; i += BLOCK_SIZE)
+    {
+        for (int j = tx; j < derivWindowSize; j += BLOCK_SIZE)
+        {
+            // t_idx = 0,0. We'll need the sobel derivative w.r.t. 1,1.
+            // It'll then go to 0,16. then 16,0. then 16,16
+            int fsY = i + SOBEL_RAD;
+            int fsX = j + SOBEL_RAD;
+
+            float dx = (-1.0f * frameShared[fsY-1][fsX-1]) + (-2.0f * frameShared[fsY][fsX-1]) + (-1.0f * frameShared[fsY+1][fsX-1]) +
+                       (1.0f * frameShared[fsY-1][fsX+1]) + (2.0f * frameShared[fsY][fsX+1]) + (1.0f * frameShared[fsY+1][fsX+1]);
+
+            float dy = (-1.0f * frameShared[fsY-1][fsX-1]) + (-2.0f * frameShared[fsY-1][fsX]) + (-1.0f * frameShared[fsY-1][fsX+1]) +
+                       (1.0f * frameShared[fsY+1][fsX-1])  + (2.0f * frameShared[fsY+1][fsX])  + (1.0f * frameShared[fsY+1][fsX+1]);
+
+            ixShared[i][j] = dx / 8.0f;
+            iyShared[i][j] = dy / 8.0f;
+        }
+    }
+    __syncthreads();
 
     // don't compute for the outermost layers of pixels
-    if (x < halo_radius || y < halo_radius || x >= width - halo_radius || y >= height - halo_radius)
+    if (x >= width || y >= height)
     {
         return;
     }
 
-    float sumIxx = 0;
-    float sumIyy = 0;
-    float sumIxy = 0;
+    float sumIxx = 0, sumIyy = 0, sumIxy = 0;
 
     // Creating the sum matrices for each pixel
-    // TODO: Gaussian Weights??
-    // goodFeaturesToTrack does so, maybe this will reduce false positives :shrug:
-    for (int dy = -halo_radius; dy <= halo_radius; dy++)
+    int tx_adj = tx + HARRIS_RAD;
+    int ty_adj = ty + HARRIS_RAD;
+    for (int dy = -HARRIS_RAD; dy <= HARRIS_RAD; dy++)
     {
-        for (int dx = -halo_radius; dx <= halo_radius; dx++)
+        for (int dx = -HARRIS_RAD; dx <= HARRIS_RAD; dx++)
         {
             float gx = ixShared[ty_adj + dy][tx_adj + dx];
             float gy = iyShared[ty_adj + dy][tx_adj + dx];
@@ -530,7 +550,7 @@ sparseLucasKanadeGPU(VideoInfo &video)
     // == Initial Sobel Filter & Harris Response ==
 
     sobelFilter<<<gridDim, blockDim>>>(deviceIx, deviceIy, deviceFrame, width, height);
-    harrisResponse<<<gridDim, blockDim>>>(deviceResponse, deviceIx, deviceIy, width, height);
+    harrisResponse<<<gridDim, blockDim>>>(deviceResponse, deviceFrame, width, height);
     cudaDeviceSynchronize();
 
     // == Threshold Calculations w/ Thrust ==
