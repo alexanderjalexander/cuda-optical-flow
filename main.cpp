@@ -71,18 +71,13 @@ main(int argc, char *argv[])
     std::filesystem::path full_path = current_dir / "inputs" / (file_input + ".mp4");
     // TODO - maybe allow the user to specify the full path to the input/output video to support other file formats
 
-    VideoInfo sparseCpuVideo;
-    VideoInfo sparseGpuVideo;
+    VideoInfo video;
     startStopwatch();
-    if (readVideo(sparseGpuVideo, full_path) != EXIT_SUCCESS)
+    if (readVideo(video, full_path) != EXIT_SUCCESS)
     {
         return EXIT_FAILURE;
     }
     stopStopwatch();
-    if (copyVideo(sparseCpuVideo, sparseGpuVideo) != EXIT_SUCCESS)
-    {
-        return EXIT_FAILURE;
-    }
 
     if (!std::filesystem::exists(full_path))
     {
@@ -103,11 +98,11 @@ main(int argc, char *argv[])
     {
         // Run both algorithms in statistics mode
         int returnCode;
-        if ((returnCode = recordStatsSparseLucasKanade(true, sparseCpuVideo)) != EXIT_SUCCESS)
+        if ((returnCode = recordStatsSparseLucasKanade(true, video)) != EXIT_SUCCESS)
         {
             return returnCode;
         }
-        if ((returnCode = recordStatsSparseLucasKanade(false, sparseGpuVideo)) != EXIT_SUCCESS)
+        if ((returnCode = recordStatsSparseLucasKanade(false, video)) != EXIT_SUCCESS)
         {
             return returnCode;
         }
@@ -120,29 +115,31 @@ main(int argc, char *argv[])
 
         // CPU Lucas Kanade
         std::cout << std::endl << "Starting CPU Lucas Kanade..." << std::endl;
-        std::cout << "Frames to Process: " << sparseCpuVideo.frames.size() << std::endl;
+        std::cout << "Frames to Process: " << video.frames.size() << std::endl;
         startStopwatch();
-        sparseLucasKanadeCPU(sparseCpuVideo);
+        sparseLucasKanadeCPU(video);
         stopStopwatch();
 
         std::cout << std::endl << "Writing CPU Lucas Kanade output to video..." << std::endl;
         startStopwatch();
-        if (writeVideo(sparseCpuVideo, sparseCpuOutputPath) != EXIT_SUCCESS)
+        if (writeVideo(video, sparseCpuOutputPath) != EXIT_SUCCESS)
         {
             return EXIT_FAILURE;
         }
         stopStopwatch();
 
+        video.outputFrames.clear();
+
         // GPU Lucas Kanade
         std::cout << std::endl << "Starting GPU Lucas Kanade..." << std::endl;
-        std::cout << "Frames to Process: " << sparseGpuVideo.frames.size() << std::endl;
+        std::cout << "Frames to Process: " << video.frames.size() << std::endl;
         startStopwatch();
-        sparseLucasKanadeGPU(sparseGpuVideo);
+        sparseLucasKanadeGPU(video);
         stopStopwatch();
 
         std::cout << std::endl << "Writing GPU Lucas Kanade output to video..." << std::endl;
         startStopwatch();
-        if (writeVideo(sparseGpuVideo, sparseGpuOutputPath) != EXIT_SUCCESS)
+        if (writeVideo(video, sparseGpuOutputPath) != EXIT_SUCCESS)
         {
             return EXIT_FAILURE;
         }
