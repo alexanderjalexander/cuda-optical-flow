@@ -1,8 +1,8 @@
 #ifndef GPU_UTILITIES_CUH
 #define GPU_UTILITIES_CUH
 
-#include "lucasKanade.hpp"
 #include "gpu_utilities.cuh"
+#include "lucasKanade.hpp"
 
 #include <stdio.h>
 
@@ -34,7 +34,8 @@ using 2D blocks and grids, but not with 1D blocks and grids.
  * @param xGlobal The index of the current thread within the global memory in the X axis.
  * @param yGlobal The index of the current thread within the global memory in the Y axis.
  */
-template <typename T> __device__ void
+template <typename T>
+__device__ void
 load2dSharedMemoryCore(T *shared, T *global, int halo_radius, int widthGlobal, int heightGlobal, int tileSize, int tx,
                        int ty, int xGlobal, int yGlobal)
 {
@@ -125,7 +126,8 @@ load2dSharedMemoryCore(T *shared, T *global, int halo_radius, int widthGlobal, i
         }
     }
 
-    // Note: letting the caller synchronize means multiple shared memory loads can be done back to back without unnecessary synchronizations between them
+    // Note: letting the caller synchronize means multiple shared memory loads can be done back to back without
+    // unnecessary synchronizations between them
     // __syncthreads();
 }
 
@@ -142,7 +144,8 @@ load2dSharedMemoryCore(T *shared, T *global, int halo_radius, int widthGlobal, i
  * @param widthGlobal The width (in elements) of the global memory data.
  * @param heightGlobal The height (in elements) of the global memory data.
  */
-template <typename T> __device__ void
+template <typename T>
+__device__ void
 load2dSharedMemoryWithHalo(T *shared, T *global, int halo_radius, int widthGlobal, int heightGlobal)
 {
     // with 2D blocks, tile == block
@@ -168,7 +171,8 @@ load2dSharedMemoryWithHalo(T *shared, T *global, int halo_radius, int widthGloba
  * @param widthGlobal The width (in elements) of the global memory data.
  * @param heightGlobal The height (in elements) of the global memory data.
  */
-template <typename T> __device__ void
+template <typename T>
+__device__ void
 load2dSharedMemoryWithHalo1dBlock(T *shared, T *global, int tileSize, int halo_radius, int widthGlobal,
                                   int heightGlobal)
 {

@@ -3,9 +3,8 @@
 
 #include "../processing/drawing.hpp"
 
-#include "lucasKanade.hpp"
-
 #include "gpu_utilities.cuh"
+#include "lucasKanade.hpp"
 
 #include <stdio.h>
 
@@ -280,10 +279,9 @@ harrisThresholder(float3 *features, int *featureCount, float *response, float th
  * @param height The image's height.
  */
 __global__ void
-iterLucasKanadeSolver(float *ix, float *iy, unsigned char *frame, unsigned char *prevFrame,
-                      float3 *features, int *featureCount, int width, int height)
+iterLucasKanadeSolver(float *ix, float *iy, unsigned char *frame, unsigned char *prevFrame, float3 *features,
+                      int *featureCount, int width, int height)
 {
-    // TODO: Merge with update thread below
     // TODO: Replace usages of ix and iy with on-the-fly calculations
 
     // usual per-thread registers/variables
@@ -305,8 +303,8 @@ iterLucasKanadeSolver(float *ix, float *iy, unsigned char *frame, unsigned char 
     {
         return;
     }
-    int fx = (int) feature.x;
-    int fy = (int) feature.y;
+    int fx = (int)feature.x;
+    int fy = (int)feature.y;
 
     // define multiple shared memory blocks large enough to hold the internal values and the halos
     __shared__ float ixShared[LK_WINDOW_WIDTH][LK_WINDOW_WIDTH];
@@ -399,7 +397,7 @@ iterLucasKanadeSolver(float *ix, float *iy, unsigned char *frame, unsigned char 
         float warpedX = fx + u + (tx - LK_WINDOW_WIDTH_HALF);
         float warpedY = fy + v + (ty - LK_WINDOW_WIDTH_HALF);
 
-        float it = bilinearInterpolate(frame, warpedX, warpedY, width, height) - (float) prevFrameShared[ty][tx];
+        float it = bilinearInterpolate(frame, warpedX, warpedY, width, height) - (float)prevFrameShared[ty][tx];
 
         ixtShared[flatIdx] = ixShared[ty][tx] * it;
         iytShared[flatIdx] = iyShared[ty][tx] * it;
@@ -576,9 +574,9 @@ sparseLucasKanadeGPU(VideoInfo &video)
         cudaDeviceSynchronize();
 
         // Obtain Lucas Kanade Solve on 1 dimensional grid/block array
-        iterLucasKanadeSolver<<<featureGridDim, featureBlockDim>>>(deviceIx, deviceIy, deviceFrame,
-                                                                   devicePrevFrame, deviceFrameFeatures,
-                                                                   deviceFrameFeatureCount, width, height);
+        iterLucasKanadeSolver<<<featureGridDim, featureBlockDim>>>(deviceIx, deviceIy, deviceFrame, devicePrevFrame,
+                                                                   deviceFrameFeatures, deviceFrameFeatureCount, width,
+                                                                   height);
         cudaDeviceSynchronize();
 
         // TODO: consider possibly abstracting the drawing to the GPU?
