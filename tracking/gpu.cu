@@ -139,6 +139,8 @@ temporalDifference(float *it, unsigned char *prevFrame, unsigned char *frame, in
 __global__ void
 harrisResponse(float *response, float *ix, float *iy, int width, int height)
 {
+    // TODO: Instantiate ixShared and iyShared utilizing the previous frame
+
     // define multiple shared memory blocks large enough to hold the internal values and the halos
     int halo_radius = HARRIS_MASK_SIZE / 2;
     __shared__ float ixShared[BLOCK_SIZE + HARRIS_MASK_SIZE - 1][BLOCK_SIZE + HARRIS_MASK_SIZE - 1];
@@ -257,9 +259,6 @@ harrisThresholder(float3 *features, int *featureCount, float *response, float th
     if (featureSlot < maxFeatures)
     {
         features[featureSlot] = make_float3(x, y, 1);
-        // features[featureSlot].x = x;
-        // features[featureSlot].y = y;
-        // features[featureSlot].z = 1;
     }
 }
 
@@ -271,7 +270,6 @@ harrisThresholder(float3 *features, int *featureCount, float *response, float th
  * size we go off of. Ideally, the block dimensions should be LK_WINDOW_HALF *
  * LK_WINDOW_HALF.
  *
- * @param flowVectors The flow directions we're attempting to store and run back.
  * @param ix Device memory storing Ix, the horizontal derivative.
  * @param iy Device memory storing Iy, the vertical derivative.
  * @param frame Global memory storing the original frame.
@@ -282,36 +280,37 @@ harrisThresholder(float3 *features, int *featureCount, float *response, float th
  * @param height The image's height.
  */
 __global__ void
-iterLucasKanadeSolver(float2 *flowVectors, float *ix, float *iy, unsigned char *frame, unsigned char *prevFrame,
+iterLucasKanadeSolver(float *ix, float *iy, unsigned char *frame, unsigned char *prevFrame,
                       float3 *features, int *featureCount, int width, int height)
 {
+    // TODO: Merge with update thread below
+    // TODO: Replace usages of ix and iy with on-the-fly calculations
+
     // usual per-thread registers/variables
     int tx = threadIdx.x;
     int ty = threadIdx.y;
     int flatIdx = ty * blockDim.x + tx; // flat index w.r.t. shared memory
 
     int featureNum = blockIdx.x; // grid is 1d array of blocks, each block is 2d array of threads
+    if (featureNum >= *featureCount)
+    {
+        return;
+    }
 
     int reductionStride = 1 << (31 - __clz(LK_WINDOW_WIDTH * LK_WINDOW_WIDTH - 1));
 
     // identify the feature to work on, early terminate if necessary
     float3 feature = features[featureNum];
-    if (featureNum >= *featureCount || feature.z != 1)
+    if (feature.z != 1)
     {
         return;
     }
     int fx = (int) feature.x;
     int fy = (int) feature.y;
 
-    // Coordinates on image, relative to feature and thread index.
-    // Assuming block size of 15x15, 7,7 should be the very middle.
-    int pixelX = (int)feature.x + tx - LK_WINDOW_WIDTH_HALF;
-    int pixelY = (int)feature.y + ty - LK_WINDOW_WIDTH_HALF;
-
     // define multiple shared memory blocks large enough to hold the internal values and the halos
     __shared__ float ixShared[LK_WINDOW_WIDTH][LK_WINDOW_WIDTH];
     __shared__ float iyShared[LK_WINDOW_WIDTH][LK_WINDOW_WIDTH];
-    __shared__ float itShared[LK_WINDOW_WIDTH][LK_WINDOW_WIDTH];
     __shared__ unsigned char prevFrameShared[LK_WINDOW_WIDTH][LK_WINDOW_WIDTH];
 
     __shared__ float ixxShared[LK_WINDOW_NUM];
@@ -320,11 +319,14 @@ iterLucasKanadeSolver(float2 *flowVectors, float *ix, float *iy, unsigned char *
     __shared__ float ixtShared[LK_WINDOW_NUM];
     __shared__ float iytShared[LK_WINDOW_NUM];
 
-    __shared__ float u, v, du, dv;
-
-    __shared__ float det;
+    __shared__ float u, v, du, dv, det;
 
     __shared__ bool invalidDet;
+
+    // Coordinates on image, relative to feature and thread index.
+    // Assuming block size of 15x15, 7,7 should be the very middle.
+    int pixelX = fx + tx - LK_WINDOW_WIDTH_HALF;
+    int pixelY = fy + ty - LK_WINDOW_WIDTH_HALF;
 
     // Load with bounds checking - clamp to zero if out of bounds
     if (pixelX >= 0 && pixelX < width && pixelY >= 0 && pixelY < height)
@@ -340,18 +342,17 @@ iterLucasKanadeSolver(float2 *flowVectors, float *ix, float *iy, unsigned char *
         iyShared[ty][tx] = 0.0f;
         prevFrameShared[ty][tx] = 0;
     }
-    itShared[ty][tx] = 0.0f;
-    ixxShared[flatIdx] = 0.0f;
-    iyyShared[flatIdx] = 0.0f;
-    ixyShared[flatIdx] = 0.0f;
-    ixtShared[flatIdx] = 0.0f;
-    iytShared[flatIdx] = 0.0f;
+
+    // ixxShared[flatIdx] = 0.0f;
+    // iyyShared[flatIdx] = 0.0f;
+    // ixyShared[flatIdx] = 0.0f;
+    // ixtShared[flatIdx] = 0.0f;
+    // iytShared[flatIdx] = 0.0f;
 
     // Let thread 0 do this
     if (flatIdx == 0)
     {
         u = v = du = dv = 0.0f;
-        flowVectors[featureNum] = {0.0f, 0.0f};
     }
 
     __syncthreads();
@@ -379,14 +380,16 @@ iterLucasKanadeSolver(float2 *flowVectors, float *ix, float *iy, unsigned char *
     {
         det = ixxShared[0] * iyyShared[0] - (ixyShared[0] * ixyShared[0]);
         invalidDet = (fabs(det) < 1e-6f);
-        if (invalidDet)
-        {
-            features[featureNum].z = 0;
-        }
     }
+
+    __syncthreads();
 
     if (invalidDet)
     {
+        if (flatIdx == 0)
+        {
+            features[featureNum].z = 0;
+        }
         return;
     }
 
@@ -395,10 +398,11 @@ iterLucasKanadeSolver(float2 *flowVectors, float *ix, float *iy, unsigned char *
     {
         float warpedX = fx + u + (tx - LK_WINDOW_WIDTH_HALF);
         float warpedY = fy + v + (ty - LK_WINDOW_WIDTH_HALF);
-        itShared[ty][tx] = bilinearInterpolate(frame, warpedX, warpedY, width, height) - (float) prevFrameShared[ty][tx];
 
-        ixtShared[flatIdx] = ixShared[ty][tx] * itShared[ty][tx];
-        iytShared[flatIdx] = iyShared[ty][tx] * itShared[ty][tx];
+        float it = bilinearInterpolate(frame, warpedX, warpedY, width, height) - (float) prevFrameShared[ty][tx];
+
+        ixtShared[flatIdx] = ixShared[ty][tx] * it;
+        iytShared[flatIdx] = iyShared[ty][tx] * it;
 
         __syncthreads();
 
@@ -421,7 +425,6 @@ iterLucasKanadeSolver(float2 *flowVectors, float *ix, float *iy, unsigned char *
             u += du;
             v += dv;
         }
-
         __syncthreads();
 
         // Convergence check
@@ -429,46 +432,22 @@ iterLucasKanadeSolver(float2 *flowVectors, float *ix, float *iy, unsigned char *
         {
             break;
         }
-
         __syncthreads();
     }
 
     if (flatIdx == 0)
     {
-        flowVectors[featureNum] = make_float2(u, v);
+        float3 feature = features[featureNum];
+        float updatedX = (feature.x + u);
+        float updatedY = (feature.y + v);
+        float status = feature.z;
+
+        if (updatedX < 0 || updatedX >= width || updatedY < 0 || updatedY >= height)
+        {
+            status = 0;
+        }
+        features[featureNum] = make_float3(updatedX, updatedY, status);
     }
-}
-
-/**
- * Kernel code to update the tracking points after an full Lucas Kanade run between
- * two images.
- *
- * @param features The device memory storing all the features we wish to track.
- * @param featureCount How many features we have in actuality.
- * @param flowVectors The flow directions we're attempting to store and run back.
- * @param width The image's width.
- * @param height The image's height.
- */
-__global__ void
-updateTrackingPoints(float3 *features, int *featureCount, float2 *flowVectors, int width, int height)
-{
-    int i = blockIdx.x * blockDim.x + threadIdx.x;
-    if (i >= *featureCount || features[i].z != 1)
-    {
-        return;
-    }
-
-    float updatedX = (features[i].x + flowVectors[i].x);
-    float updatedY = (features[i].y + flowVectors[i].y);
-
-    if (updatedX < 0 || updatedX >= width || updatedY < 0 || updatedY >= height)
-    {
-        features[i].z = 0;
-        return;
-    }
-
-    features[i].x = updatedX;
-    features[i].y = updatedY;
 }
 
 /**
@@ -503,12 +482,12 @@ sparseLucasKanadeGPU(VideoInfo &video)
     unsigned char *deviceFrame = NULL;
     unsigned char *devicePrevFrame = NULL;
 
+    // TODO: remove deviceIx, deviceIy, deviceIt
     float *deviceIx = NULL;
     float *deviceIy = NULL;
     float *deviceIt = NULL;
 
     float3 *deviceFrameFeatures = NULL;
-    float2 *deviceFlowVectors = NULL;
     int *deviceFrameFeatureCount = NULL;
     float *deviceResponse = NULL;
 
@@ -523,7 +502,6 @@ sparseLucasKanadeGPU(VideoInfo &video)
     cudaMalloc(&deviceIt, width * height * sizeof(float));
 
     cudaMalloc(&deviceFrameFeatures, MAX_FEATURES * sizeof(float3));
-    cudaMalloc(&deviceFlowVectors, MAX_FEATURES * sizeof(float2));
     cudaMalloc(&deviceFrameFeatureCount, sizeof(int));
     cudaMalloc(&deviceResponse, width * height * sizeof(float));
 
@@ -537,7 +515,6 @@ sparseLucasKanadeGPU(VideoInfo &video)
     cudaMemset(deviceIt, 0, width * height * sizeof(float));
 
     cudaMemset(deviceFrameFeatures, 0, MAX_FEATURES * sizeof(float3));
-    cudaMemset(deviceFlowVectors, 0, MAX_FEATURES * sizeof(float2));
     cudaMemset(deviceFrameFeatureCount, 0, sizeof(int));
     cudaMemset(deviceResponse, 0, width * height * sizeof(float));
 
@@ -599,11 +576,9 @@ sparseLucasKanadeGPU(VideoInfo &video)
         cudaDeviceSynchronize();
 
         // Obtain Lucas Kanade Solve on 1 dimensional grid/block array
-        iterLucasKanadeSolver<<<featureGridDim, featureBlockDim>>>(deviceFlowVectors, deviceIx, deviceIy, deviceFrame,
+        iterLucasKanadeSolver<<<featureGridDim, featureBlockDim>>>(deviceIx, deviceIy, deviceFrame,
                                                                    devicePrevFrame, deviceFrameFeatures,
                                                                    deviceFrameFeatureCount, width, height);
-        updateTrackingPoints<<<featureGridDim, featureBlockDim>>>(deviceFrameFeatures, deviceFrameFeatureCount,
-                                                                  deviceFlowVectors, width, height);
         cudaDeviceSynchronize();
 
         // TODO: consider possibly abstracting the drawing to the GPU?
@@ -665,7 +640,6 @@ sparseLucasKanadeGPU(VideoInfo &video)
     cudaFree(deviceIt);
 
     cudaFree(deviceFrameFeatures);
-    cudaFree(deviceFlowVectors);
     cudaFree(deviceFrameFeatureCount);
     cudaFree(deviceResponse);
 }
