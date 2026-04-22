@@ -29,6 +29,19 @@ class VideoProcessor
         // The video's height.
         int height;
 
+        /**
+         * TODO: Reader Thread
+         * - Queue of frames that have been read
+         * - Mutex for queue
+         * - The thread itself
+         * - Atomic bool for whether the capture is done or not
+         * TODO: Writer Thread
+         * - Queue of frames to write to disk
+         * - Mutex for queue
+         * - The thread itself
+         * - Atomic bool for whether the write is done or not
+         */
+
     public:
         /**
          * Getter for the video's FPS.
