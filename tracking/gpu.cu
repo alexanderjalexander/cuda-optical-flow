@@ -44,89 +44,6 @@ bilinearInterpolate(unsigned char *img, float x, float y, int width, int height)
 }
 
 /**
- * Kernel code to obtain the horizontal and vertical Sobel derivatives of an image.
- *
- * Results are normalized by dividing the final result by 8.
- *
- * @param ix Device memory to store Ix, the horizontal derivative.
- * @param iy Device memory to store Iy, the vertical derivative.
- * @param frame The 8-bit, grayscale image to calculate the sobel derivative on.
- * @param width The image's width.
- * @param height The image's height.
- */
-__global__ void
-sobelFilter(float *ix, float *iy, unsigned char *frame, int width, int height)
-{
-    // define a block of shared memory large enough to hold the internal values and the halo
-    int halo_radius = SOBEL_MASK_SIZE / 2;
-    __shared__ unsigned char frameShared[BLOCK_SIZE + SOBEL_MASK_SIZE - 1][BLOCK_SIZE + SOBEL_MASK_SIZE - 1];
-
-    // identify the coordinates of the output pixel to work on
-    int tx = threadIdx.x, ty = threadIdx.y;
-    int tx_adj = tx + halo_radius;
-    int ty_adj = ty + halo_radius;
-    int x = tx + blockIdx.x * blockDim.x;
-    int y = ty + blockIdx.y * blockDim.y;
-    int global_index = y * width + x;
-
-    // load the input (including halo) into shared memory
-    load2dSharedMemoryWithHalo<unsigned char>(frameShared[0], frame, halo_radius, width, height);
-    __syncthreads();
-
-    // =====================================
-    // perform the actual calculation
-    // =====================================
-
-    // don't write to output for nonexistent pixels
-    if (y >= height || x >= width)
-    {
-        return;
-    }
-
-    // don't compute for the outermost layer of pixels
-    if (y == 0 || y == height - 1 || x == 0 || x == width - 1)
-    {
-        ix[global_index] = 0;
-        iy[global_index] = 0;
-        return;
-    }
-
-    // do the actual computation for relevant threads
-    float dx = (-1 * frameShared[ty_adj - 1][tx_adj - 1]) + (-2 * frameShared[ty_adj][tx_adj - 1]) +
-               (-1 * frameShared[ty_adj + 1][tx_adj - 1]) + (frameShared[ty_adj - 1][tx_adj + 1]) +
-               (2 * frameShared[ty_adj][tx_adj + 1]) + (frameShared[ty_adj + 1][tx_adj + 1]);
-
-    float dy = (-1 * frameShared[ty_adj - 1][tx_adj - 1]) + (-2 * frameShared[ty_adj - 1][tx_adj]) +
-               (-1 * frameShared[ty_adj - 1][tx_adj + 1]) + (1 * frameShared[ty_adj + 1][tx_adj - 1]) +
-               (2 * frameShared[ty_adj + 1][tx_adj]) + (1 * frameShared[ty_adj + 1][tx_adj + 1]);
-
-    ix[global_index] = dx / 8;
-    iy[global_index] = dy / 8;
-}
-
-/**
- * Kernel code to obtain the temporal difference between two images.
- *
- * @param it Device memory to store It, the temporal derivative.
- * @param prevFrame The 8-bit, grayscale image to calculate the sobel derivative on.
- * @param frame The 8-bit, grayscale image to calculate the sobel derivative on.
- * @param width The image's width.
- * @param height The image's height.
- */
-__global__ void
-temporalDifference(float *it, unsigned char *prevFrame, unsigned char *frame, int width, int height)
-{
-    int x = threadIdx.x + blockIdx.x * blockDim.x;
-    int y = threadIdx.y + blockIdx.y * blockDim.y;
-
-    if (x < width && y < height)
-    {
-        int global_index = y * width + x;
-        it[global_index] = frame[global_index] - prevFrame[global_index];
-    }
-}
-
-/**
  * Kernel code to obtain an image's Harris Response given the sobel derivatives.
  *
  * @param response Device memory to store the initial Harris response.
@@ -151,7 +68,7 @@ harrisResponse(float *response, unsigned char *frame, int width, int height)
     __shared__ float iyShared[BLOCK_SIZE + (2 * HARRIS_MASK_RAD)][BLOCK_SIZE + (2 * HARRIS_MASK_RAD)];
 
     // collaboratively load the horizontal and vertical derivatives into shared memory, including halos
-    load2dSharedMemoryWithHalo<unsigned char>((unsigned char*)frameShared, frame, TOTAL_HALO, width, height);
+    load2dSharedMemoryWithHalo<unsigned char>((unsigned char *)frameShared, frame, TOTAL_HALO, width, height);
     __syncthreads();
 
     // on the fly derivative calculations
@@ -165,11 +82,13 @@ harrisResponse(float *response, unsigned char *frame, int width, int height)
             int fsY = i + SOBEL_MASK_RAD;
             int fsX = j + SOBEL_MASK_RAD;
 
-            float dx = (-1.0f * frameShared[fsY-1][fsX-1]) + (-2.0f * frameShared[fsY][fsX-1]) + (-1.0f * frameShared[fsY+1][fsX-1]) +
-                       (1.0f * frameShared[fsY-1][fsX+1]) + (2.0f * frameShared[fsY][fsX+1]) + (1.0f * frameShared[fsY+1][fsX+1]);
+            float dx = (-1.0f * frameShared[fsY - 1][fsX - 1]) + (-2.0f * frameShared[fsY][fsX - 1]) +
+                       (-1.0f * frameShared[fsY + 1][fsX - 1]) + (1.0f * frameShared[fsY - 1][fsX + 1]) +
+                       (2.0f * frameShared[fsY][fsX + 1]) + (1.0f * frameShared[fsY + 1][fsX + 1]);
 
-            float dy = (-1.0f * frameShared[fsY-1][fsX-1]) + (-2.0f * frameShared[fsY-1][fsX]) + (-1.0f * frameShared[fsY-1][fsX+1]) +
-                       (1.0f * frameShared[fsY+1][fsX-1])  + (2.0f * frameShared[fsY+1][fsX])  + (1.0f * frameShared[fsY+1][fsX+1]);
+            float dy = (-1.0f * frameShared[fsY - 1][fsX - 1]) + (-2.0f * frameShared[fsY - 1][fsX]) +
+                       (-1.0f * frameShared[fsY - 1][fsX + 1]) + (1.0f * frameShared[fsY + 1][fsX - 1]) +
+                       (2.0f * frameShared[fsY + 1][fsX]) + (1.0f * frameShared[fsY + 1][fsX + 1]);
 
             ixShared[i][j] = dx / 8.0f;
             iyShared[i][j] = dy / 8.0f;
@@ -287,8 +206,6 @@ harrisThresholder(float3 *features, int *featureCount, float *response, float th
  * size we go off of. Ideally, the block dimensions should be LK_WINDOW_HALF *
  * LK_WINDOW_HALF.
  *
- * @param ix Device memory storing Ix, the horizontal derivative.
- * @param iy Device memory storing Iy, the vertical derivative.
  * @param frame Global memory storing the original frame.
  * @param prevFrame Global memory storing the previous frame.
  * @param features The device memory storing all the features we wish to track.
@@ -297,11 +214,9 @@ harrisThresholder(float3 *features, int *featureCount, float *response, float th
  * @param height The image's height.
  */
 __global__ void
-iterLucasKanadeSolver(float *ix, float *iy, unsigned char *frame, unsigned char *prevFrame, float3 *features,
+iterLucasKanadeSolver(unsigned char *frame, unsigned char *prevFrame, float3 *features,
                       int *featureCount, int width, int height)
 {
-    // TODO: Replace usages of ix and iy with on-the-fly calculations
-
     // usual per-thread registers/variables
     int tx = threadIdx.x;
     int ty = threadIdx.y;
@@ -327,7 +242,8 @@ iterLucasKanadeSolver(float *ix, float *iy, unsigned char *frame, unsigned char 
     // define multiple shared memory blocks large enough to hold the internal values and the halos
     __shared__ float ixShared[LK_WINDOW_WIDTH][LK_WINDOW_WIDTH];
     __shared__ float iyShared[LK_WINDOW_WIDTH][LK_WINDOW_WIDTH];
-    __shared__ unsigned char prevFrameShared[LK_WINDOW_WIDTH][LK_WINDOW_WIDTH];
+    __shared__ unsigned char prevFrameShared[LK_WINDOW_WIDTH + (2 * SOBEL_MASK_RAD)]
+                                            [LK_WINDOW_WIDTH + (2 * SOBEL_MASK_RAD)];
 
     __shared__ float ixxShared[LK_WINDOW_NUM];
     __shared__ float iyyShared[LK_WINDOW_NUM];
@@ -336,41 +252,39 @@ iterLucasKanadeSolver(float *ix, float *iy, unsigned char *frame, unsigned char 
     __shared__ float iytShared[LK_WINDOW_NUM];
 
     __shared__ float u, v, du, dv, det;
-
     __shared__ bool invalidDet;
 
-    // Coordinates on image, relative to feature and thread index.
+    // Coordinates on GLOBAL image, relative to feature and thread index.
     // Assuming block size of 15x15, 7,7 should be the very middle.
     int pixelX = fx + tx - LK_WINDOW_WIDTH_HALF;
     int pixelY = fy + ty - LK_WINDOW_WIDTH_HALF;
 
-    // Load with bounds checking - clamp to zero if out of bounds
-    if (pixelX >= 0 && pixelX < width && pixelY >= 0 && pixelY < height)
-    {
-        int globalIdx = pixelY * width + pixelX;
-        ixShared[ty][tx] = ix[globalIdx];
-        iyShared[ty][tx] = iy[globalIdx];
-        prevFrameShared[ty][tx] = prevFrame[globalIdx];
-    }
-    else
-    {
-        ixShared[ty][tx] = 0.0f;
-        iyShared[ty][tx] = 0.0f;
-        prevFrameShared[ty][tx] = 0;
-    }
+    // get the halos into shared memory, including halos
+    load2dSharedMemoryCore<unsigned char>((unsigned char *) prevFrameShared, prevFrame, SOBEL_MASK_RAD, width, height, LK_WINDOW_WIDTH, tx, ty, pixelX, pixelY);
+    __syncthreads();
 
-    // ixxShared[flatIdx] = 0.0f;
-    // iyyShared[flatIdx] = 0.0f;
-    // ixyShared[flatIdx] = 0.0f;
-    // ixtShared[flatIdx] = 0.0f;
-    // iytShared[flatIdx] = 0.0f;
+    // Load with bounds checking - clamp to zero if out of bounds
+    int fsY = ty + SOBEL_MASK_RAD;
+    int fsX = tx + SOBEL_MASK_RAD;
+
+    float dx = (-1.0f * prevFrameShared[fsY - 1][fsX - 1]) + (-2.0f * prevFrameShared[fsY][fsX - 1]) +
+            (-1.0f * prevFrameShared[fsY + 1][fsX - 1]) + (1.0f * prevFrameShared[fsY - 1][fsX + 1]) +
+            (2.0f * prevFrameShared[fsY][fsX + 1]) + (1.0f * prevFrameShared[fsY + 1][fsX + 1]);
+
+    float dy = (-1.0f * prevFrameShared[fsY - 1][fsX - 1]) + (-2.0f * prevFrameShared[fsY - 1][fsX]) +
+            (-1.0f * prevFrameShared[fsY - 1][fsX + 1]) + (1.0f * prevFrameShared[fsY + 1][fsX - 1]) +
+            (2.0f * prevFrameShared[fsY + 1][fsX]) + (1.0f * prevFrameShared[fsY + 1][fsX + 1]);
+
+    ixShared[ty][tx] = dx / 8.0f;
+    iyShared[ty][tx] = dy / 8.0f;
+
+    __syncthreads();
 
     // Let thread 0 do this
     if (flatIdx == 0)
     {
         u = v = du = dv = 0.0f;
     }
-
     __syncthreads();
 
     // Per-thread calculation of ixx, iyy, and ixy
@@ -415,7 +329,7 @@ iterLucasKanadeSolver(float *ix, float *iy, unsigned char *frame, unsigned char 
         float warpedX = fx + u + (tx - LK_WINDOW_WIDTH_HALF);
         float warpedY = fy + v + (ty - LK_WINDOW_WIDTH_HALF);
 
-        float it = bilinearInterpolate(frame, warpedX, warpedY, width, height) - (float)prevFrameShared[ty][tx];
+        float it = bilinearInterpolate(frame, warpedX, warpedY, width, height) - (float) prevFrameShared[fsY][fsX];
 
         ixtShared[flatIdx] = ixShared[ty][tx] * it;
         iytShared[flatIdx] = iyShared[ty][tx] * it;
@@ -498,11 +412,6 @@ sparseLucasKanadeGPU(VideoInfo &video)
     unsigned char *deviceFrame = NULL;
     unsigned char *devicePrevFrame = NULL;
 
-    // TODO: remove deviceIx, deviceIy, deviceIt
-    float *deviceIx = NULL;
-    float *deviceIy = NULL;
-    float *deviceIt = NULL;
-
     float3 *deviceFrameFeatures = NULL;
     int *deviceFrameFeatureCount = NULL;
     float *deviceResponse = NULL;
@@ -513,10 +422,6 @@ sparseLucasKanadeGPU(VideoInfo &video)
     cudaMalloc(&deviceFrame, width * height * sizeof(unsigned char));
     cudaMalloc(&devicePrevFrame, width * height * sizeof(unsigned char));
 
-    cudaMalloc(&deviceIx, width * height * sizeof(float));
-    cudaMalloc(&deviceIy, width * height * sizeof(float));
-    cudaMalloc(&deviceIt, width * height * sizeof(float));
-
     cudaMalloc(&deviceFrameFeatures, MAX_FEATURES * sizeof(float3));
     cudaMalloc(&deviceFrameFeatureCount, sizeof(int));
     cudaMalloc(&deviceResponse, width * height * sizeof(float));
@@ -525,10 +430,6 @@ sparseLucasKanadeGPU(VideoInfo &video)
 
     cudaMemcpy(deviceFrame, video.frames[0].data, size, cudaMemcpyHostToDevice);
     cudaMemcpy(devicePrevFrame, video.frames[1].data, size, cudaMemcpyHostToDevice);
-
-    cudaMemset(deviceIx, 0, width * height * sizeof(float));
-    cudaMemset(deviceIy, 0, width * height * sizeof(float));
-    cudaMemset(deviceIt, 0, width * height * sizeof(float));
 
     cudaMemset(deviceFrameFeatures, 0, MAX_FEATURES * sizeof(float3));
     cudaMemset(deviceFrameFeatureCount, 0, sizeof(int));
@@ -540,14 +441,13 @@ sparseLucasKanadeGPU(VideoInfo &video)
     dim3 gridDim((int)ceil((float)width / blockDim.x), (int)ceil((float)height / blockDim.y), 1);
 
     // === First Frame Procedure ===
-    // 1. Grab Sobel & Harris Response
+    // 1. Grab Harris Response
     // 2. Use Thrust Extrema to calculate threshold
     // 3. Threshold all features
     // 3. Perform Lucas Kanade Solve on every frame past that
 
-    // == Initial Sobel Filter & Harris Response ==
+    // == Initial Harris Response ==
 
-    sobelFilter<<<gridDim, blockDim>>>(deviceIx, deviceIy, deviceFrame, width, height);
     harrisResponse<<<gridDim, blockDim>>>(deviceResponse, deviceFrame, width, height);
     cudaDeviceSynchronize();
 
@@ -587,12 +487,8 @@ sparseLucasKanadeGPU(VideoInfo &video)
         cudaMemcpy(devicePrevFrame, deviceFrame, size, cudaMemcpyDeviceToDevice);
         cudaMemcpy(deviceFrame, video.frames[i].data, size, cudaMemcpyHostToDevice);
 
-        // Do Sobel & Temporal Difference
-        sobelFilter<<<gridDim, blockDim>>>(deviceIx, deviceIy, devicePrevFrame, width, height);
-        cudaDeviceSynchronize();
-
         // Obtain Lucas Kanade Solve on 1 dimensional grid/block array
-        iterLucasKanadeSolver<<<featureGridDim, featureBlockDim>>>(deviceIx, deviceIy, deviceFrame, devicePrevFrame,
+        iterLucasKanadeSolver<<<featureGridDim, featureBlockDim>>>(deviceFrame, devicePrevFrame,
                                                                    deviceFrameFeatures, deviceFrameFeatureCount, width,
                                                                    height);
         cudaDeviceSynchronize();
@@ -627,8 +523,6 @@ sparseLucasKanadeGPU(VideoInfo &video)
          * - TODO_DONE: Shared Memory
          * - TODO: Texture Memory
          * - TODO: Merging Kernels
-         *   - Sobel into LK Solver
-         *   - Tracking Points
          *   - Output frame drawing in another kernel??
          * - TODO: Batched Frame Loading
          * - TODO: Asynchronous Memory Loading
@@ -650,10 +544,6 @@ sparseLucasKanadeGPU(VideoInfo &video)
 
     cudaFree(deviceFrame);
     cudaFree(devicePrevFrame);
-
-    cudaFree(deviceIx);
-    cudaFree(deviceIy);
-    cudaFree(deviceIt);
 
     cudaFree(deviceFrameFeatures);
     cudaFree(deviceFrameFeatureCount);
