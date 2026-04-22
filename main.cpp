@@ -50,7 +50,7 @@ returnOutputFilePath(std::filesystem::path path, std::string suffix)
 {
     std::filesystem::path outputDir = std::filesystem::current_path() / "outputs";
     std::filesystem::create_directories(outputDir);
-    std::string outputFileName = path.stem().string() + suffix + path.extension().string();
+    std::string outputFileName = path.stem().string() + suffix + ".mp4";
     std::filesystem::path outputPath = outputDir / outputFileName;
     return outputPath;
 }
