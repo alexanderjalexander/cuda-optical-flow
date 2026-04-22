@@ -6,9 +6,9 @@ LDFLAGS = -lopencv_core -lopencv_highgui -lopencv_videoio -lopencv_video -lopenc
 FORMATTER = clang-format
 FLOW_PROG = optflow
 
-PROCESSING_OBJS = processing/video_processor.o processing/video_io.o processing/drawing.o
-PROCESSING_SRCS = processing/video_processor.cpp processing/video_io.cpp processing/drawing.cpp
-PROCESSING_HDRS = processing/video_processor.hpp processing/video_io.hpp processing/drawing.hpp
+PROCESSING_OBJS = processing/video_io.o processing/drawing.o
+PROCESSING_SRCS = processing/video_io.cpp processing/drawing.cpp
+PROCESSING_HDRS = processing/video_io.hpp processing/drawing.hpp
 
 TIMING_OBJS = timing/stopwatch.o timing/statistics.o
 TIMING_SRCS = timing/stopwatch.cpp timing/statistics.cpp
