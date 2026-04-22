@@ -14,7 +14,7 @@
 
 struct ExecStats
 {
-    std::vector<std::chrono::duration<double>> executionTimes;
+        std::vector<std::chrono::duration<double>> executionTimes;
 };
 
 void printStatistics(char *functionName, ExecStats &exec);

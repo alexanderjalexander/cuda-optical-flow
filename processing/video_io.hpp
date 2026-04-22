@@ -8,12 +8,12 @@
 
 struct VideoInfo
 {
-    // TODO: Replace buffers with reader and writer frames
-    std::vector<cv::Mat> frames;
-    std::vector<cv::Mat> outputFrames;
-    double fps;
-    int width;
-    int height;
+        // TODO: Replace buffers with reader and writer frames
+        std::vector<cv::Mat> frames;
+        std::vector<cv::Mat> outputFrames;
+        double fps;
+        int width;
+        int height;
 };
 
 // TODO: Implement methods to create and return a video reader & writer

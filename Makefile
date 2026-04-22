@@ -5,9 +5,24 @@ LDFLAGS = -lopencv_core -lopencv_highgui -lopencv_videoio -lopencv_video -lopenc
 
 FORMATTER = clang-format
 FLOW_PROG = optflow
-FLOW_OBJS = timing/stopwatch.o timing/statistics.o tracking/cpu.o tracking/gpu.o processing/video_io.o processing/drawing.o main.o
-FLOW_SRCS = timing/stopwatch.cpp timing/statistics.cpp tracking/cpu.cpp tracking/gpu.cu processing/video_io.cpp processing/drawing.cpp main.cpp
-FLOW_FORMAT = $(FLOW_SRCS) timing/stopwatch.hpp tracking/lucasKanade.hpp tracking/gpu_utilities.cuh processing/video_io.hpp processing/drawing.hpp
+
+PROCESSING_OBJS = processing/video_processor.o processing/video_io.o processing/drawing.o
+PROCESSING_SRCS = processing/video_processor.cpp processing/video_io.cpp processing/drawing.cpp
+PROCESSING_HDRS = processing/video_processor.hpp processing/video_io.hpp processing/drawing.hpp
+
+TIMING_OBJS = timing/stopwatch.o timing/statistics.o
+TIMING_SRCS = timing/stopwatch.cpp timing/statistics.cpp
+TIMING_HDRS = timing/stopwatch.hpp timing/statistics.hpp
+
+TRACKING_OBJS = tracking/cpu.o tracking/gpu.o
+TRACKING_SRCS = tracking/cpu.cpp tracking/gpu.cu
+TRACKING_HDRS = tracking/lucasKanade.hpp tracking/gpu_utilities.cuh
+
+FLOW_OBJS = $(PROCESSING_OBJS) $(TIMING_OBJS) $(TRACKING_OBJS) main.o
+FLOW_SRCS = $(PROCESSING_SRCS) $(TIMING_SRCS) $(TRACKING_SRCS) main.cpp
+FLOW_HDRS = $(PROCESSING_HDRS) $(TIMING_HDRS) $(TRACKING_HDRS)
+
+FLOW_FORMAT = $(FLOW_SRCS) $(FLOW_HDRS)
 
 all: ${FLOW_PROG}
 

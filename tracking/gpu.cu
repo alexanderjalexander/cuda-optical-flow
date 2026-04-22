@@ -214,8 +214,8 @@ harrisThresholder(float3 *features, int *featureCount, float *response, float th
  * @param height The image's height.
  */
 __global__ void
-iterLucasKanadeSolver(unsigned char *frame, unsigned char *prevFrame, float3 *features,
-                      int *featureCount, int width, int height)
+iterLucasKanadeSolver(unsigned char *frame, unsigned char *prevFrame, float3 *features, int *featureCount, int width,
+                      int height)
 {
     // usual per-thread registers/variables
     int tx = threadIdx.x;
@@ -260,7 +260,8 @@ iterLucasKanadeSolver(unsigned char *frame, unsigned char *prevFrame, float3 *fe
     int pixelY = fy + ty - LK_WINDOW_WIDTH_HALF;
 
     // get the halos into shared memory, including halos
-    load2dSharedMemoryCore<unsigned char>((unsigned char *) prevFrameShared, prevFrame, SOBEL_MASK_RAD, width, height, LK_WINDOW_WIDTH, tx, ty, pixelX, pixelY);
+    load2dSharedMemoryCore<unsigned char>((unsigned char *)prevFrameShared, prevFrame, SOBEL_MASK_RAD, width, height,
+                                          LK_WINDOW_WIDTH, tx, ty, pixelX, pixelY);
     __syncthreads();
 
     // Load with bounds checking - clamp to zero if out of bounds
@@ -268,12 +269,12 @@ iterLucasKanadeSolver(unsigned char *frame, unsigned char *prevFrame, float3 *fe
     int fsX = tx + SOBEL_MASK_RAD;
 
     float dx = (-1.0f * prevFrameShared[fsY - 1][fsX - 1]) + (-2.0f * prevFrameShared[fsY][fsX - 1]) +
-            (-1.0f * prevFrameShared[fsY + 1][fsX - 1]) + (1.0f * prevFrameShared[fsY - 1][fsX + 1]) +
-            (2.0f * prevFrameShared[fsY][fsX + 1]) + (1.0f * prevFrameShared[fsY + 1][fsX + 1]);
+               (-1.0f * prevFrameShared[fsY + 1][fsX - 1]) + (1.0f * prevFrameShared[fsY - 1][fsX + 1]) +
+               (2.0f * prevFrameShared[fsY][fsX + 1]) + (1.0f * prevFrameShared[fsY + 1][fsX + 1]);
 
     float dy = (-1.0f * prevFrameShared[fsY - 1][fsX - 1]) + (-2.0f * prevFrameShared[fsY - 1][fsX]) +
-            (-1.0f * prevFrameShared[fsY - 1][fsX + 1]) + (1.0f * prevFrameShared[fsY + 1][fsX - 1]) +
-            (2.0f * prevFrameShared[fsY + 1][fsX]) + (1.0f * prevFrameShared[fsY + 1][fsX + 1]);
+               (-1.0f * prevFrameShared[fsY - 1][fsX + 1]) + (1.0f * prevFrameShared[fsY + 1][fsX - 1]) +
+               (2.0f * prevFrameShared[fsY + 1][fsX]) + (1.0f * prevFrameShared[fsY + 1][fsX + 1]);
 
     ixShared[ty][tx] = dx / 8.0f;
     iyShared[ty][tx] = dy / 8.0f;
@@ -329,7 +330,7 @@ iterLucasKanadeSolver(unsigned char *frame, unsigned char *prevFrame, float3 *fe
         float warpedX = fx + u + (tx - LK_WINDOW_WIDTH_HALF);
         float warpedY = fy + v + (ty - LK_WINDOW_WIDTH_HALF);
 
-        float it = bilinearInterpolate(frame, warpedX, warpedY, width, height) - (float) prevFrameShared[fsY][fsX];
+        float it = bilinearInterpolate(frame, warpedX, warpedY, width, height) - (float)prevFrameShared[fsY][fsX];
 
         ixtShared[flatIdx] = ixShared[ty][tx] * it;
         iytShared[flatIdx] = iyShared[ty][tx] * it;
@@ -488,9 +489,8 @@ sparseLucasKanadeGPU(VideoInfo &video)
         cudaMemcpy(deviceFrame, video.frames[i].data, size, cudaMemcpyHostToDevice);
 
         // Obtain Lucas Kanade Solve on 1 dimensional grid/block array
-        iterLucasKanadeSolver<<<featureGridDim, featureBlockDim>>>(deviceFrame, devicePrevFrame,
-                                                                   deviceFrameFeatures, deviceFrameFeatureCount, width,
-                                                                   height);
+        iterLucasKanadeSolver<<<featureGridDim, featureBlockDim>>>(deviceFrame, devicePrevFrame, deviceFrameFeatures,
+                                                                   deviceFrameFeatureCount, width, height);
         cudaDeviceSynchronize();
 
         // TODO: consider possibly abstracting the drawing to the GPU?
