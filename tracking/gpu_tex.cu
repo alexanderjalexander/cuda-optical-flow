@@ -52,7 +52,7 @@ bilinearInterpolate(unsigned char *img, float x, float y, int width, int height)
  * @param height The image's height.
  */
 __global__ void
-harrisResponse(float *response, unsigned char *frame, int width, int height)
+harrisResponseTex(float *response, unsigned char *frame, int width, int height)
 {
     // constant definitions for my own sanity
     const int TOTAL_HALO = HARRIS_MASK_RAD + SOBEL_MASK_RAD;
@@ -139,7 +139,7 @@ harrisResponse(float *response, unsigned char *frame, int width, int height)
  * @param height The image's height.
  */
 __global__ void
-harrisThresholder(float3 *features, int *featureCount, float *response, float threshold, int maxFeatures, int width,
+harrisThresholderTex(float3 *features, int *featureCount, float *response, float threshold, int maxFeatures, int width,
                   int height)
 {
     // define a block of shared memory large enough to hold the internal values and the halo
@@ -217,7 +217,7 @@ harrisThresholder(float3 *features, int *featureCount, float *response, float th
  * @param height The image's height.
  */
 __global__ void
-iterLucasKanadeSolver(unsigned char *frame, unsigned char *prevFrame, float3 *features, int *featureCount, int width,
+iterLucasKanadeSolverTex(unsigned char *frame, unsigned char *prevFrame, float3 *features, int *featureCount, int width,
                       int height)
 {
     // usual per-thread registers/variables
@@ -397,7 +397,7 @@ iterLucasKanadeSolver(unsigned char *frame, unsigned char *prevFrame, float3 *fe
  * @param video the VideoInfo struct storing the initial frame's videos.
  */
 void
-sparseLucasKanadeGPU(VideoInfo &video)
+sparseLucasKanadeGPUTex(VideoInfo &video)
 {
     if (video.frames.empty())
     {
@@ -422,7 +422,6 @@ sparseLucasKanadeGPU(VideoInfo &video)
 
     // === Pointer Memory Allocation ===
 
-    // TODO: Error check???
     cudaMalloc(&deviceFrame, width * height * sizeof(unsigned char));
     cudaMalloc(&devicePrevFrame, width * height * sizeof(unsigned char));
 
@@ -452,7 +451,7 @@ sparseLucasKanadeGPU(VideoInfo &video)
 
     // == Initial Harris Response ==
 
-    harrisResponse<<<gridDim, blockDim>>>(deviceResponse, deviceFrame, width, height);
+    harrisResponseTex<<<gridDim, blockDim>>>(deviceResponse, deviceFrame, width, height);
     cudaDeviceSynchronize();
 
     // == Threshold Calculations w/ Thrust ==
@@ -461,7 +460,7 @@ sparseLucasKanadeGPU(VideoInfo &video)
     float responseMax = *thrust::max_element(responsePtr, responsePtr + (width * height));
     float responseThreshold = responseMax * QUALITY_LEVEL;
 
-    harrisThresholder<<<gridDim, blockDim>>>(deviceFrameFeatures, deviceFrameFeatureCount, deviceResponse,
+    harrisThresholderTex<<<gridDim, blockDim>>>(deviceFrameFeatures, deviceFrameFeatureCount, deviceResponse,
                                              responseThreshold, MAX_FEATURES, width, height);
     cudaDeviceSynchronize();
 
@@ -493,12 +492,10 @@ sparseLucasKanadeGPU(VideoInfo &video)
         cudaMemcpy(deviceFrame, video.frames[i].data, size, cudaMemcpyHostToDevice);
 
         // Obtain Lucas Kanade Solve on 1 dimensional grid/block array
-        iterLucasKanadeSolver<<<featureGridDim, featureBlockDim>>>(deviceFrame, devicePrevFrame, deviceFrameFeatures,
+        iterLucasKanadeSolverTex<<<featureGridDim, featureBlockDim>>>(deviceFrame, devicePrevFrame, deviceFrameFeatures,
                                                                    deviceFrameFeatureCount, width, height);
         cudaDeviceSynchronize();
 
-        // TODO: consider possibly abstracting the drawing to the GPU?
-        // But then we still need to copy the output frame... argh...
         cudaMemcpy(frameFeatures, deviceFrameFeatures, featureCount * sizeof(float3), cudaMemcpyDeviceToHost);
 
         cv::Mat output;
@@ -509,23 +506,6 @@ sparseLucasKanadeGPU(VideoInfo &video)
 
         std::memcpy(prevFrameFeatures, frameFeatures, featureCount * sizeof(float3));
         video.outputFrames.push_back(output);
-
-        /**
-         * Algorithmic Considerations
-         * - TODO: Gaussian Weighted Average (2:00 - https://www.youtube.com/watch?v=79Ty2Kkivvc)
-         * - TODO: Coarse-To-Fine            (2:55 - https://www.youtube.com/watch?v=79Ty2Kkivvc)
-         * - TODO: Dynamic Feature Recalculation
-         *   - If we lose a lot of features, recalculate and add new ones into our feature matrix
-         */
-
-        /**
-         * Optimization/Efficiency Considerations
-         * - TODO_DONE: Shared Memory
-         * - TODO: Texture Memory
-         * - TODO: Batched Frame Loading
-         * - TODO: Asynchronous Memory Loading
-         * - TODO: CUDA Streams
-         */
     }
 
     // === Memory Freeing Procedure ===
