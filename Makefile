@@ -1,5 +1,5 @@
 CC = nvcc
-FLAGS = -arch=sm_75 -std=c++17 -diag-suppress 611
+FLAGS = -arch=sm_75 -std=c++17 -diag-suppress 611 -MMD -MP
 IFLAGS = -I/usr/include/opencv4
 LDFLAGS = -lopencv_core -lopencv_highgui -lopencv_videoio -lopencv_video -lopencv_imgcodecs -lopencv_imgproc
 
@@ -30,16 +30,20 @@ ${FLOW_PROG}: ${FLOW_OBJS}
 	${CC} ${FLAGS} ${FLOW_OBJS} -o ${FLOW_PROG} ${LDFLAGS}
 
 %.o: %.cpp
-	${CC} ${FLAGS} ${IFLAGS} -c $< -o $@
+	${CC} ${FLAGS} ${IFLAGS} -MF $(@:.o=.d) -c $< -o $@
 
 %.o: %.cu
-	${CC} ${FLAGS} ${IFLAGS} -c $< -o $@
+	${CC} ${FLAGS} ${IFLAGS} -MF $(@:.o=.d) -c $< -o $@
 
 clean:
-	rm -f ${FLOW_PROG} ${FLOW_OBJS}
+	rm -f ${FLOW_PROG} ${FLOW_OBJS} $(FLOW_OBJS:.o=.d) main.d
 
 format:
 	${FORMATTER} --style=file -i ${FLOW_FORMAT}
 
 format-15:
 	${FORMATTER}-15 --style=file -i ${FLOW_FORMAT}
+
+
+# Include automatically generated dependency files
+-include $(FLOW_OBJS:.o=.d) main.d
