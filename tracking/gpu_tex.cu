@@ -485,18 +485,15 @@ sparseLucasKanadeGPUTex(VideoInfo &video)
     {
         // Switch Frames using pointer swapping
         std::swap(frameArray, prevFrameArray);
+        std::swap(frameTex, prevFrameTex);
 
         // Remake the texture objects again.
         cudaMemcpy2DToArray(frameArray, 0, 0, video.frames[i].data, width * sizeof(u_char), width * sizeof(u_char), height, cudaMemcpyHostToDevice);
 
         cudaDestroyTextureObject(frameTex);
-        cudaDestroyTextureObject(prevFrameTex);
 
         resDesc.res.array.array = frameArray;
         cudaCreateTextureObject(&frameTex, &resDesc, &texDesc, nullptr);
-
-        resDesc.res.array.array = prevFrameArray;
-        cudaCreateTextureObject(&prevFrameTex, &resDesc, &texDesc, nullptr);
 
         // Obtain Lucas Kanade Solve on 1 dimensional grid/block array
         iterLucasKanadeSolverTex<<<featureGridDim, featureBlockDim>>>(frameTex, prevFrameTex, deviceFrameFeatures,
