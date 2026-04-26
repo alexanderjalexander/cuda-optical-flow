@@ -118,8 +118,8 @@ harrisThresholderTex(float3 *features, int *featureCount, float *response, float
                   int height)
 {
     // define a block of shared memory large enough to hold the internal values and the halo
-    int halo_radius = HARRIS_MASK_RAD;
-    __shared__ float responseShared[BLOCK_SIZE + (HARRIS_MASK_SIZE - 1)][BLOCK_SIZE + (HARRIS_MASK_SIZE - 1)];
+    int halo_radius = HARRIS_DISTANCE;
+    __shared__ float responseShared[BLOCK_SIZE + (HARRIS_DISTANCE * 2)][BLOCK_SIZE + (HARRIS_DISTANCE * 2)];
 
     // load the input (including halo) into shared memory
     load2dSharedMemoryWithHalo<float>(responseShared[0], response, halo_radius, width, height);
@@ -145,9 +145,9 @@ harrisThresholderTex(float3 *features, int *featureCount, float *response, float
     }
 
     // Non-Max Suppression
-    for (int yShift = -HARRIS_MASK_RAD; yShift <= HARRIS_MASK_RAD; yShift++)
+    for (int yShift = -HARRIS_DISTANCE; yShift <= HARRIS_DISTANCE; yShift++)
     {
-        for (int xShift = -HARRIS_MASK_RAD; xShift <= HARRIS_MASK_RAD; xShift++)
+        for (int xShift = -HARRIS_DISTANCE; xShift <= HARRIS_DISTANCE; xShift++)
         {
             if (yShift == 0 && xShift == 0)
             {

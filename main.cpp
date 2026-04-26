@@ -145,10 +145,10 @@ main(int argc, char *argv[])
     {
         // Run both algorithms in statistics mode
         int returnCode;
-        if ((returnCode = recordStatsSparseLucasKanade(true, progFlags.textureMem, video)) != EXIT_SUCCESS)
-        {
-            return returnCode;
-        }
+        // if ((returnCode = recordStatsSparseLucasKanade(true, progFlags.textureMem, video)) != EXIT_SUCCESS)
+        // {
+        //     return returnCode;
+        // }
         if ((returnCode = recordStatsSparseLucasKanade(false, progFlags.textureMem, video)) != EXIT_SUCCESS)
         {
             return returnCode;
