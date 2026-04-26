@@ -82,10 +82,6 @@ main(int argc, char *argv[])
         return EXIT_FAILURE;
     }
 
-    cudaFree(0);
-    float* dummyPtr;
-    cudaMallocHost(&dummyPtr, 15);
-
     // Various options flags
     ProgramFlags progFlags = {0};
 
