@@ -10,7 +10,7 @@
  * How many iterations the recordStats function(s) should record execution
  * times for.
  */
-#define STATISTICS_ITERATIONS 25
+#define STATISTICS_ITERATIONS 100
 
 struct ExecStats
 {
@@ -18,6 +18,6 @@ struct ExecStats
 };
 
 void printStatistics(char *functionName, ExecStats &exec);
-int recordStatsSparseLucasKanade(bool onCPU, VideoInfo &video);
+int recordStatsSparseLucasKanade(bool onCPU, bool texMem, VideoInfo &video);
 
 #endif

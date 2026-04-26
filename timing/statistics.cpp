@@ -101,7 +101,7 @@ printStatistics(char *functionName, ExecStats &exec)
  * @return
  */
 int
-recordStatsSparseLucasKanade(bool onCPU, VideoInfo &video)
+recordStatsSparseLucasKanade(bool onCPU, bool texMem, VideoInfo &video)
 {
     vector<duration<double>> execTimesVec;
     execTimesVec.reserve(STATISTICS_ITERATIONS);
@@ -122,7 +122,14 @@ recordStatsSparseLucasKanade(bool onCPU, VideoInfo &video)
         }
         else
         {
-            sparseLucasKanadeGPU(video);
+            if (texMem)
+            {
+                sparseLucasKanadeGPUTex(video);
+            }
+            else
+            {
+                sparseLucasKanadeGPU(video);
+            }
         }
         auto stopTime = high_resolution_clock::now();
         duration<double> sec = stopTime - startTime;

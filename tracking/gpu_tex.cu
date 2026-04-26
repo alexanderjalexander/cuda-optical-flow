@@ -1,47 +1,14 @@
 #include <thrust/device_ptr.h>
 #include <thrust/extrema.h>
 
+#include <cuda_runtime.h>
+
 #include "../processing/drawing.hpp"
 
 #include "gpu_utilities.cuh"
 #include "lucasKanade.hpp"
 
 #include <stdio.h>
-
-/**
- * Device-only code to get the bilinear interpolation of a point in an image.
- *
- * @param img The image to interpolate against.
- * @param x The desired x coordinate.
- * @param y The desired y coordinate.
- * @param width The image `img`'s width.
- * @param height The image `img`'s height.
- *
- * @returns A floating point value representing the interpolated intensity.
- */
-__device__ float
-bilinearInterpolate(unsigned char *img, float x, float y, int width, int height)
-{
-    int x1 = (int)floor(x);
-    int x2 = (int)ceil(x);
-    int y1 = (int)floor(y);
-    int y2 = (int)ceil(y);
-
-    x1 = max(0, min(x1, width - 1));
-    x2 = max(0, min(x2, width - 1));
-    y1 = max(0, min(y1, height - 1));
-    y2 = max(0, min(y2, height - 1));
-
-    float q11 = (float)img[x1 + (y1 * width)];
-    float q12 = (float)img[x1 + (y2 * width)];
-    float q21 = (float)img[x2 + (y1 * width)];
-    float q22 = (float)img[x2 + (y2 * width)];
-
-    float dx = x - float(x1);
-    float dy = y - float(y1);
-
-    return (1.0 - dx) * (1.0 - dy) * q11 + (1.0 - dx) * (dy)*q12 + (dx) * (1.0 - dy) * q21 + (dx) * (dy)*q22;
-}
 
 /**
  * Kernel code to obtain an image's Harris Response given the sobel derivatives.
@@ -52,7 +19,7 @@ bilinearInterpolate(unsigned char *img, float x, float y, int width, int height)
  * @param height The image's height.
  */
 __global__ void
-harrisResponseTex(float *response, unsigned char *frame, int width, int height)
+harrisResponseTex(float *response, cudaTextureObject_t frameTex, int width, int height)
 {
     // constant definitions for my own sanity
     const int TOTAL_HALO = HARRIS_MASK_RAD + SOBEL_MASK_RAD;
@@ -68,7 +35,15 @@ harrisResponseTex(float *response, unsigned char *frame, int width, int height)
     __shared__ float iyShared[BLOCK_SIZE + (2 * HARRIS_MASK_RAD)][BLOCK_SIZE + (2 * HARRIS_MASK_RAD)];
 
     // collaboratively load the horizontal and vertical derivatives into shared memory, including halos
-    load2dSharedMemoryWithHalo<unsigned char>((unsigned char *)frameShared, frame, TOTAL_HALO, width, height);
+    for (int i = ty; i < BLOCK_SIZE + (2 * TOTAL_HALO); i += BLOCK_SIZE)
+    {
+        for (int j = tx; j < BLOCK_SIZE + (2 * TOTAL_HALO); j += BLOCK_SIZE)
+        {
+            int gx = blockIdx.x * blockDim.x - TOTAL_HALO + j;
+            int gy = blockIdx.y * blockDim.y - TOTAL_HALO + i;
+            frameShared[i][j] = (unsigned char)(tex2D<float>(frameTex, gx + 0.5f, gy + 0.5f) * 255.0f);
+        }
+    }
     __syncthreads();
 
     // on the fly derivative calculations
@@ -217,7 +192,7 @@ harrisThresholderTex(float3 *features, int *featureCount, float *response, float
  * @param height The image's height.
  */
 __global__ void
-iterLucasKanadeSolverTex(unsigned char *frame, unsigned char *prevFrame, float3 *features, int *featureCount, int width,
+iterLucasKanadeSolverTex(cudaTextureObject_t frameTex, cudaTextureObject_t prevFrameTex, float3 *features, int *featureCount, int width,
                       int height)
 {
     // usual per-thread registers/variables
@@ -259,12 +234,17 @@ iterLucasKanadeSolverTex(unsigned char *frame, unsigned char *prevFrame, float3 
 
     // Coordinates on GLOBAL image, relative to feature and thread index.
     // Assuming block size of 15x15, 7,7 should be the very middle.
-    int pixelX = fx + tx - LK_WINDOW_WIDTH_HALF;
-    int pixelY = fy + ty - LK_WINDOW_WIDTH_HALF;
+    int baseX = fx - LK_WINDOW_WIDTH_HALF - SOBEL_MASK_RAD;
+    int baseY = fy - LK_WINDOW_WIDTH_HALF - SOBEL_MASK_RAD;
 
     // get the halos into shared memory, including halos
-    load2dSharedMemoryCore<unsigned char>((unsigned char *)prevFrameShared, prevFrame, SOBEL_MASK_RAD, width, height,
-                                          LK_WINDOW_WIDTH, tx, ty, pixelX, pixelY);
+    for (int i = ty; i < LK_WINDOW_WIDTH + (2 * SOBEL_MASK_RAD); i += LK_WINDOW_WIDTH)
+    {
+        for (int j = tx; j < LK_WINDOW_WIDTH + (2 * SOBEL_MASK_RAD); j += LK_WINDOW_WIDTH)
+        {
+            prevFrameShared[i][j] = (unsigned char)(tex2D<float>(prevFrameTex, baseX + j + 0.5f, baseY + i + 0.5f) * 255.0f);
+        }
+    }
     __syncthreads();
 
     // Load with bounds checking - clamp to zero if out of bounds
@@ -333,7 +313,7 @@ iterLucasKanadeSolverTex(unsigned char *frame, unsigned char *prevFrame, float3 
         float warpedX = fx + u + (tx - LK_WINDOW_WIDTH_HALF);
         float warpedY = fy + v + (ty - LK_WINDOW_WIDTH_HALF);
 
-        float it = bilinearInterpolate(frame, warpedX, warpedY, width, height) - (float)prevFrameShared[fsY][fsX];
+        float it = (tex2D<float>(frameTex, warpedX + 0.5f, warpedY + 0.5f) * 255.0f) - (float)prevFrameShared[fsY][fsX];
 
         ixtShared[flatIdx] = ixShared[ty][tx] * it;
         iytShared[flatIdx] = iyShared[ty][tx] * it;
@@ -406,15 +386,15 @@ sparseLucasKanadeGPUTex(VideoInfo &video)
 
     int width = video.frames[0].cols;
     int height = video.frames[0].rows;
-    int size = width * height * sizeof(unsigned char);
 
     // For coloring the output
     cv::Mat mask = cv::Mat::zeros(video.frames[0].size(), CV_8UC3);
 
     // === Pointer Declaration ===
 
-    unsigned char *deviceFrame = NULL;
-    unsigned char *devicePrevFrame = NULL;
+    cudaArray_t frameArray, prevFrameArray;
+    cudaTextureObject_t frameTex = {}, prevFrameTex = {};
+    cudaChannelFormatDesc channelDesc = cudaCreateChannelDesc<unsigned char>();
 
     float3 *deviceFrameFeatures = NULL;
     int *deviceFrameFeatureCount = NULL;
@@ -422,8 +402,8 @@ sparseLucasKanadeGPUTex(VideoInfo &video)
 
     // === Pointer Memory Allocation ===
 
-    cudaMalloc(&deviceFrame, width * height * sizeof(unsigned char));
-    cudaMalloc(&devicePrevFrame, width * height * sizeof(unsigned char));
+    cudaMallocArray(&frameArray, &channelDesc, width, height);
+    cudaMallocArray(&prevFrameArray, &channelDesc, width, height);
 
     cudaMalloc(&deviceFrameFeatures, MAX_FEATURES * sizeof(float3));
     cudaMalloc(&deviceFrameFeatureCount, sizeof(int));
@@ -431,12 +411,30 @@ sparseLucasKanadeGPUTex(VideoInfo &video)
 
     // === Pointer Memory Copying & Zeroing ===
 
-    cudaMemcpy(deviceFrame, video.frames[0].data, size, cudaMemcpyHostToDevice);
-    cudaMemcpy(devicePrevFrame, video.frames[1].data, size, cudaMemcpyHostToDevice);
+    cudaMemcpy2DToArray(frameArray, 0, 0, video.frames[0].data, width * sizeof(u_char), width * sizeof(u_char), height, cudaMemcpyHostToDevice);
+    cudaMemcpy2DToArray(prevFrameArray, 0, 0, video.frames[0].data, width * sizeof(u_char), width * sizeof(u_char), height, cudaMemcpyHostToDevice);
 
     cudaMemset(deviceFrameFeatures, 0, MAX_FEATURES * sizeof(float3));
     cudaMemset(deviceFrameFeatureCount, 0, sizeof(int));
     cudaMemset(deviceResponse, 0, width * height * sizeof(float));
+
+    // === Texture Memory Declaration & Initialization ===
+
+    cudaResourceDesc resDesc = {};
+    resDesc.resType = cudaResourceTypeArray;
+
+    cudaTextureDesc texDesc = {};
+    texDesc.addressMode[0] = cudaAddressModeBorder;
+    texDesc.addressMode[1] = cudaAddressModeBorder;
+    texDesc.filterMode = cudaFilterModeLinear;
+    texDesc.readMode = cudaReadModeNormalizedFloat;
+    texDesc.normalizedCoords = 0;
+
+    resDesc.res.array.array = frameArray;
+    cudaCreateTextureObject(&frameTex, &resDesc, &texDesc, nullptr);
+
+    resDesc.res.array.array = prevFrameArray;
+    cudaCreateTextureObject(&prevFrameTex, &resDesc, &texDesc, nullptr);
 
     // === Kernel Blocks & Grids Initialization ===
 
@@ -451,7 +449,7 @@ sparseLucasKanadeGPUTex(VideoInfo &video)
 
     // == Initial Harris Response ==
 
-    harrisResponseTex<<<gridDim, blockDim>>>(deviceResponse, deviceFrame, width, height);
+    harrisResponseTex<<<gridDim, blockDim>>>(deviceResponse, frameTex, width, height);
     cudaDeviceSynchronize();
 
     // == Threshold Calculations w/ Thrust ==
@@ -486,13 +484,22 @@ sparseLucasKanadeGPUTex(VideoInfo &video)
     for (int i = 1; i < video.frames.size(); i++)
     {
         // Switch Frames using pointer swapping
-        unsigned char *temp = devicePrevFrame;
-        devicePrevFrame = deviceFrame;
-        deviceFrame = temp;
-        cudaMemcpy(deviceFrame, video.frames[i].data, size, cudaMemcpyHostToDevice);
+        std::swap(frameArray, prevFrameArray);
+
+        // Remake the texture objects again.
+        cudaMemcpy2DToArray(frameArray, 0, 0, video.frames[i].data, width * sizeof(u_char), width * sizeof(u_char), height, cudaMemcpyHostToDevice);
+
+        cudaDestroyTextureObject(frameTex);
+        cudaDestroyTextureObject(prevFrameTex);
+
+        resDesc.res.array.array = frameArray;
+        cudaCreateTextureObject(&frameTex, &resDesc, &texDesc, nullptr);
+
+        resDesc.res.array.array = prevFrameArray;
+        cudaCreateTextureObject(&prevFrameTex, &resDesc, &texDesc, nullptr);
 
         // Obtain Lucas Kanade Solve on 1 dimensional grid/block array
-        iterLucasKanadeSolverTex<<<featureGridDim, featureBlockDim>>>(deviceFrame, devicePrevFrame, deviceFrameFeatures,
+        iterLucasKanadeSolverTex<<<featureGridDim, featureBlockDim>>>(frameTex, prevFrameTex, deviceFrameFeatures,
                                                                    deviceFrameFeatureCount, width, height);
         cudaDeviceSynchronize();
 
@@ -513,8 +520,8 @@ sparseLucasKanadeGPUTex(VideoInfo &video)
     free(prevFrameFeatures);
     free(frameFeatures);
 
-    cudaFree(deviceFrame);
-    cudaFree(devicePrevFrame);
+    cudaFreeArray(frameArray);
+    cudaFreeArray(prevFrameArray);
 
     cudaFree(deviceFrameFeatures);
     cudaFree(deviceFrameFeatureCount);

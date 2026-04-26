@@ -55,20 +55,21 @@ returnOutputFilePath(std::filesystem::path path, std::string suffix)
     return outputPath;
 }
 
-const char flagChars[] = "s";
+const char flagChars[] = "st";
 
 static void
 usage(const char *progname)
 {
     fprintf(stderr, "Usage: %s [-%s] videoName\n", progname, flagChars);
     fprintf(stderr, "\t-s --> Run in 'Statistics Mode'\n");
-    fprintf(stderr, "*NOTE* videoName is an input file within the /inputs folder, and must not "
-                    "contain the video extension. It is expected to be a .mp4 file.\n");
+    fprintf(stderr, "\t-s --> Run with Texture Memory\n");
+    fprintf(stderr, "*NOTE* videoName is the relative path to a file, extension included.\n");
 }
 
 struct ProgramFlags
 {
     bool statsMode;
+    bool textureMem;
 };
 
 int
@@ -80,6 +81,10 @@ main(int argc, char *argv[])
         std::cerr << "No CUDA device available for GPU computation!" << std::endl;
         return EXIT_FAILURE;
     }
+
+    cudaFree(0);
+    float* dummyPtr;
+    cudaMallocHost(&dummyPtr, 15);
 
     // Various options flags
     ProgramFlags progFlags = {0};
@@ -96,6 +101,10 @@ main(int argc, char *argv[])
         case 's':
             std::cout << "Statistics Mode enabled." << std::endl;
             progFlags.statsMode = true;
+            break;
+        case 't':
+            std::cout << "Texture Memory enabled." << std::endl;
+            progFlags.textureMem = true;
             break;
         default:
             usage(progname);
@@ -136,14 +145,15 @@ main(int argc, char *argv[])
     {
         // Run both algorithms in statistics mode
         int returnCode;
-        if ((returnCode = recordStatsSparseLucasKanade(true, video)) != EXIT_SUCCESS)
+        if ((returnCode = recordStatsSparseLucasKanade(true, progFlags.textureMem, video)) != EXIT_SUCCESS)
         {
             return returnCode;
         }
-        if ((returnCode = recordStatsSparseLucasKanade(false, video)) != EXIT_SUCCESS)
+        if ((returnCode = recordStatsSparseLucasKanade(false, progFlags.textureMem, video)) != EXIT_SUCCESS)
         {
             return returnCode;
         }
+
     }
     else
     {
@@ -173,7 +183,14 @@ main(int argc, char *argv[])
         std::cout << std::endl << "Starting GPU Lucas Kanade..." << std::endl;
         std::cout << "Frames to Process: " << video.frames.size() << std::endl;
         startStopwatch();
-        sparseLucasKanadeGPU(video);
+        if (progFlags.textureMem)
+        {
+            sparseLucasKanadeGPUTex(video);
+        }
+        else
+        {
+            sparseLucasKanadeGPU(video);
+        }
         stopStopwatch();
 
         std::cout << std::endl << "Writing GPU Lucas Kanade output to video..." << std::endl;
