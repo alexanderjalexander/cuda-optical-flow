@@ -22,8 +22,7 @@ using namespace chrono;
  * @param percentile The percentile to grab from the sorted data.
  * @return
  */
-template <typename T>
-T
+template <typename T> T
 calculatePercentile(const vector<T> &sortedData, double percentile)
 {
     if (sortedData.empty())
