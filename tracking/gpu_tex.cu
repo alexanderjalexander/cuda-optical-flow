@@ -38,9 +38,9 @@ harrisResponseTex(float *response, cudaTextureObject_t frameTex, int width, int 
     {
         for (int j = tx; j < BLOCK_SIZE + (2 * TOTAL_HALO); j += BLOCK_SIZE)
         {
-            int gx = blockIdx.x * blockDim.x - TOTAL_HALO + j;
-            int gy = blockIdx.y * blockDim.y - TOTAL_HALO + i;
-            frameShared[i][j] = (unsigned char)(tex2DLod<float>(frameTex, gx + 0.5f, gy + 0.5f, 0.0f) * 255.0f);
+            float gx = ((blockIdx.x * blockDim.x - TOTAL_HALO + j) + 0.5)/width;
+            float gy = ((blockIdx.y * blockDim.y - TOTAL_HALO + i) + 0.5)/height;
+            frameShared[i][j] = (unsigned char)(tex2DLod<float>(frameTex, gx, gy, 0.0f) * 255.0f);
         }
     }
     __syncthreads();
@@ -236,13 +236,15 @@ iterLucasKanadeSolverTex(cudaTextureObject_t frameTex, cudaTextureObject_t prevF
     int baseX = fx - LK_WINDOW_WIDTH_HALF - SOBEL_MASK_RAD;
     int baseY = fy - LK_WINDOW_WIDTH_HALF - SOBEL_MASK_RAD;
 
+    // TODO: Implement the coarse-to-fine loop starting from here.
+
     // get the halos into shared memory, including halos
     for (int i = ty; i < LK_WINDOW_WIDTH + (2 * SOBEL_MASK_RAD); i += LK_WINDOW_WIDTH)
     {
         for (int j = tx; j < LK_WINDOW_WIDTH + (2 * SOBEL_MASK_RAD); j += LK_WINDOW_WIDTH)
         {
             prevFrameShared[i][j] =
-                (unsigned char)(tex2DLod<float>(prevFrameTex, baseX + j + 0.5f, baseY + i + 0.5f, 0.0f) * 255.0f);
+                (unsigned char)(tex2DLod<float>(prevFrameTex, (baseX + j + 0.5f)/width, (baseY + i + 0.5f)/height, 0.0f) * 255.0f);
         }
     }
     __syncthreads();
@@ -310,10 +312,10 @@ iterLucasKanadeSolverTex(cudaTextureObject_t frameTex, cudaTextureObject_t prevF
     // Giant Iteration Loop
     for (int iteration = 0; iteration < LK_ITERATIONS; iteration++)
     {
-        float warpedX = fx + u + (tx - LK_WINDOW_WIDTH_HALF);
-        float warpedY = fy + v + (ty - LK_WINDOW_WIDTH_HALF);
+        float warpedX = (fx + u + (tx - LK_WINDOW_WIDTH_HALF) + 0.5f)/width;
+        float warpedY = (fy + v + (ty - LK_WINDOW_WIDTH_HALF) + 0.5f)/height;
 
-        float it = (tex2DLod<float>(frameTex, warpedX + 0.5f, warpedY + 0.5f, 0.0f) * 255.0f) -
+        float it = (tex2DLod<float>(frameTex, warpedX, warpedY, 0.0f) * 255.0f) -
                    (float)prevFrameShared[fsY][fsX];
 
         ixtShared[flatIdx] = ixShared[ty][tx] * it;
@@ -379,16 +381,16 @@ fillMipMap(cudaTextureObject_t prevLevelTex, cudaSurfaceObject_t levelSurf, int 
     // Grab where the pixel is gonna go :P
     int destX = blockIdx.x * blockDim.x + threadIdx.x;
     int destY = blockIdx.y * blockDim.y + threadIdx.y;
-    int srcX = destX << 1;
-    int srcY = destY << 1;
+    float srcX = 1.0 / float(destWidth);
+    float srcY = 1.0 / float(destHeight);
 
     // Grab the original pixel height n stuff
     if (destX < destWidth && destY < destHeight)
     {
-        float q11 = 255.0f * tex2D<float>(prevLevelTex, srcX, srcY);
-        float q12 = 255.0f * tex2D<float>(prevLevelTex, srcX, srcY + 1);
-        float q21 = 255.0f * tex2D<float>(prevLevelTex, srcX + 1, srcY);
-        float q22 = 255.0f * tex2D<float>(prevLevelTex, srcX + 1, srcY + 1);
+        float q11 = 255.0f * tex2D<float>(prevLevelTex, (destX + 0) * srcX, (destY + 0) * srcY);
+        float q12 = 255.0f * tex2D<float>(prevLevelTex, (destX + 0) * srcX, (destY + 1) * srcY);
+        float q21 = 255.0f * tex2D<float>(prevLevelTex, (destX + 1) * srcX, (destY + 0) * srcY);
+        float q22 = 255.0f * tex2D<float>(prevLevelTex, (destX + 1) * srcX, (destY + 1) * srcY);
 
         u_char val = (u_char)((q11 + q12 + q21 + q22) * 0.25f);
 
@@ -406,6 +408,8 @@ fillMipMap(cudaTextureObject_t prevLevelTex, cudaSurfaceObject_t levelSurf, int 
 void
 generateMipMaps(cudaMipmappedArray_t *mipmap, cudaExtent *extent, unsigned int levels)
 {
+    // Modeled after:
+    // https://github.com/NVIDIA/cuda-samples/blob/master/Samples/3_CUDA_Features/bindlessTexture/bindlessTexture_kernel.cu
     for (int level = 1; level < levels; level++)
     {
         cudaArray_t levelArray, prevLevelArray;
@@ -422,11 +426,11 @@ generateMipMaps(cudaMipmappedArray_t *mipmap, cudaExtent *extent, unsigned int l
         cudaCreateSurfaceObject(&levelSurf, &levelResDesc);
 
         cudaTextureDesc prevLevelTexDesc = {};
-        prevLevelTexDesc.addressMode[0] = cudaAddressModeBorder;
-        prevLevelTexDesc.addressMode[1] = cudaAddressModeBorder;
-        prevLevelTexDesc.filterMode = cudaFilterModePoint;
+        prevLevelTexDesc.addressMode[0] = cudaAddressModeClamp;
+        prevLevelTexDesc.addressMode[1] = cudaAddressModeClamp;
+        prevLevelTexDesc.filterMode = cudaFilterModeLinear;
         prevLevelTexDesc.readMode = cudaReadModeNormalizedFloat;
-        prevLevelTexDesc.normalizedCoords = 0;
+        prevLevelTexDesc.normalizedCoords = 1;
 
         cudaTextureObject_t prevLevelTex;
         cudaCreateTextureObject(&prevLevelTex, &prevLevelResDesc, &prevLevelTexDesc, nullptr);
@@ -436,6 +440,7 @@ generateMipMaps(cudaMipmappedArray_t *mipmap, cudaExtent *extent, unsigned int l
         int gridHeight = (int)(ceil((float)(extent->height >> level) / BLOCK_SIZE));
         dim3 gridDim(gridWidth, gridHeight, 1);
 
+        cudaGetLastError(); // drain
         fillMipMap<<<gridDim, blockDim>>>(prevLevelTex, levelSurf, (extent->width) >> level, (extent->height) >> level);
         cudaDeviceSynchronize();
 
@@ -483,8 +488,8 @@ sparseLucasKanadeGPUTex(VideoInfo &video)
 
     // === Memory Allocation ===
 
-    cudaMallocMipmappedArray(&deviceFrameMipMap, &channelDesc, extent, MAX_PYR_LEVELS, cudaArraySurfaceLoadStore);
-    cudaMallocMipmappedArray(&devicePrevFrameMipMap, &channelDesc, extent, MAX_PYR_LEVELS, cudaArraySurfaceLoadStore);
+    cudaMallocMipmappedArray(&deviceFrameMipMap, &channelDesc, extent, MAX_PYR_LEVELS);
+    cudaMallocMipmappedArray(&devicePrevFrameMipMap, &channelDesc, extent, MAX_PYR_LEVELS);
 
     cudaMalloc(&deviceFrameFeatures, MAX_FEATURES * sizeof(float3));
     cudaMalloc(&deviceFrameFeatureCount, sizeof(int));
@@ -500,11 +505,11 @@ sparseLucasKanadeGPUTex(VideoInfo &video)
 
     cudaArray_t level0;
     cudaGetMipmappedArrayLevel(&level0, deviceFrameMipMap, 0);
-    cudaMemcpy2DToArray(level0, 0, 0, video.frames[0].data, width * sizeof(u_char), width * sizeof(u_char), height,
-                        cudaMemcpyHostToDevice);
+    CUDA_CHECK(cudaMemcpy2DToArray(level0, 0, 0, video.frames[0].data, width * sizeof(u_char), width * sizeof(u_char), height,
+                        cudaMemcpyHostToDevice));
     cudaGetMipmappedArrayLevel(&level0, devicePrevFrameMipMap, 0);
-    cudaMemcpy2DToArray(level0, 0, 0, video.frames[0].data, width * sizeof(u_char), width * sizeof(u_char), height,
-                        cudaMemcpyHostToDevice);
+    CUDA_CHECK(cudaMemcpy2DToArray(level0, 0, 0, video.frames[0].data, width * sizeof(u_char), width * sizeof(u_char), height,
+                        cudaMemcpyHostToDevice));
 
     generateMipMaps(&devicePrevFrameMipMap, &extent, MAX_PYR_LEVELS);
     generateMipMaps(&deviceFrameMipMap, &extent, MAX_PYR_LEVELS);
@@ -519,16 +524,16 @@ sparseLucasKanadeGPUTex(VideoInfo &video)
     texDesc.addressMode[1] = cudaAddressModeBorder;
     texDesc.filterMode = cudaFilterModeLinear;
     texDesc.readMode = cudaReadModeNormalizedFloat;
-    texDesc.normalizedCoords = 0;
-    texDesc.mipmapFilterMode = cudaFilterModeLinear;
+    texDesc.normalizedCoords = 1;
+    texDesc.mipmapFilterMode = cudaFilterModePoint;
     texDesc.minMipmapLevelClamp = 0.0f;
     texDesc.maxMipmapLevelClamp = (float)(MAX_PYR_LEVELS - 1);
 
     resDesc.res.mipmap.mipmap = deviceFrameMipMap;
-    cudaCreateTextureObject(&deviceFrameTex, &resDesc, &texDesc, nullptr);
+    CUDA_CHECK(cudaCreateTextureObject(&deviceFrameTex, &resDesc, &texDesc, nullptr));
 
     resDesc.res.mipmap.mipmap = devicePrevFrameMipMap;
-    cudaCreateTextureObject(&devicePrevFrameTex, &resDesc, &texDesc, nullptr);
+    CUDA_CHECK(cudaCreateTextureObject(&devicePrevFrameTex, &resDesc, &texDesc, nullptr));
 
     // === Kernel Blocks & Grids Initialization ===
 
