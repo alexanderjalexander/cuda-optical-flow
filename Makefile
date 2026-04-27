@@ -45,9 +45,9 @@ clean:
 	rm -rf ${BUILD_DIR}
 
 format:
-	${FORMATTER} --style=file -i ${FLOW_FORMAT}
+	${FORMATTER} --style=file --Wno-error=unknown -i ${FLOW_FORMAT}
 
 format-15:
-	${FORMATTER}-15 --style=file -i ${FLOW_FORMAT}
+	${FORMATTER}-15 --style=file --Wno-error=unknown -i ${FLOW_FORMAT}
 
 -include $(FLOW_OBJS:.o=.d)
