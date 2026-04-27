@@ -100,7 +100,7 @@ printStatistics(char *functionName, ExecStats &exec)
  * @return
  */
 int
-recordStatsSparseLucasKanade(bool onCPU, bool texMem, VideoInfo &video)
+recordStatsSparseLucasKanade(bool onCPU, ProgramFlags progFlags, VideoInfo &video)
 {
     vector<duration<double>> execTimesVec;
     execTimesVec.reserve(STATISTICS_ITERATIONS);
@@ -121,9 +121,13 @@ recordStatsSparseLucasKanade(bool onCPU, bool texMem, VideoInfo &video)
         }
         else
         {
-            if (texMem)
+            if (progFlags.textureMem)
             {
                 sparseLucasKanadeGPUTex(video);
+            }
+            else if (progFlags.mipMap)
+            {
+                sparseLucasKanadeGPUMip(video);
             }
             else
             {

@@ -6,6 +6,7 @@
 #include "timing/statistics.hpp"
 #include "timing/stopwatch.hpp"
 #include "tracking/lucasKanade.hpp"
+#include "flags.hpp"
 
 #include <cstdlib>
 #include <filesystem>
@@ -55,7 +56,7 @@ returnOutputFilePath(std::filesystem::path path, std::string suffix)
     return outputPath;
 }
 
-const char flagChars[] = "st";
+const char flagChars[] = "stm";
 
 static void
 usage(const char *progname)
@@ -63,14 +64,9 @@ usage(const char *progname)
     fprintf(stderr, "Usage: %s [-%s] videoName\n", progname, flagChars);
     fprintf(stderr, "\t-s --> Run in 'Statistics Mode'\n");
     fprintf(stderr, "\t-s --> Run with Texture Memory\n");
+    fprintf(stderr, "\t-s --> Run with Mipmapped Texture Memory\n");
     fprintf(stderr, "*NOTE* videoName is the relative path to a file, extension included.\n");
 }
-
-struct ProgramFlags
-{
-    bool statsMode;
-    bool textureMem;
-};
 
 int
 main(int argc, char *argv[])
@@ -99,13 +95,26 @@ main(int argc, char *argv[])
             progFlags.statsMode = true;
             break;
         case 't':
-            std::cout << "Texture Memory enabled." << std::endl;
             progFlags.textureMem = true;
+            progFlags.mipMap = false;
+            break;
+        case 'm':
+            progFlags.mipMap = true;
+            progFlags.textureMem = false;
             break;
         default:
             usage(progname);
             return EX_USAGE;
         }
+    }
+
+    if (progFlags.textureMem)
+    {
+        std::cout << "Classic Texture Memory enabled." << std::endl;
+    }
+    else if (progFlags.mipMap)
+    {
+        std::cout << "Mipmapped Texture Memory enabled." << std::endl;
     }
 
     // Parse options after arguments
@@ -141,11 +150,11 @@ main(int argc, char *argv[])
     {
         // Run both algorithms in statistics mode
         int returnCode;
-        // if ((returnCode = recordStatsSparseLucasKanade(true, progFlags.textureMem, video)) != EXIT_SUCCESS)
+        // if ((returnCode = recordStatsSparseLucasKanade(true, progFlags, video)) != EXIT_SUCCESS)
         // {
         //     return returnCode;
         // }
-        if ((returnCode = recordStatsSparseLucasKanade(false, progFlags.textureMem, video)) != EXIT_SUCCESS)
+        if ((returnCode = recordStatsSparseLucasKanade(false, progFlags, video)) != EXIT_SUCCESS)
         {
             return returnCode;
         }
@@ -181,6 +190,10 @@ main(int argc, char *argv[])
         if (progFlags.textureMem)
         {
             sparseLucasKanadeGPUTex(video);
+        }
+        else if (progFlags.mipMap)
+        {
+            sparseLucasKanadeGPUMip(video);
         }
         else
         {

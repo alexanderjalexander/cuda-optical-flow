@@ -15,8 +15,8 @@ TIMING_OBJS = $(BUILD_DIR)/timing/stopwatch.o $(BUILD_DIR)/timing/statistics.o
 TIMING_SRCS = timing/stopwatch.cpp timing/statistics.cpp
 TIMING_HDRS = timing/stopwatch.hpp timing/statistics.hpp
 
-TRACKING_OBJS = $(BUILD_DIR)/tracking/cpu.o $(BUILD_DIR)/tracking/gpu.o $(BUILD_DIR)/tracking/gpu_tex.o
-TRACKING_SRCS = tracking/cpu.cpp tracking/gpu.cu tracking/gpu_tex.cu
+TRACKING_OBJS = $(BUILD_DIR)/tracking/cpu.o $(BUILD_DIR)/tracking/gpu.o $(BUILD_DIR)/tracking/gpu_tex.o $(BUILD_DIR)/tracking/gpu_mip.o
+TRACKING_SRCS = tracking/cpu.cpp tracking/gpu.cu tracking/gpu_tex.cu tracking/gpu_mip.cu
 TRACKING_HDRS = tracking/lucasKanade.hpp tracking/gpu_utilities.cuh
 
 FLOW_OBJS = $(PROCESSING_OBJS) $(TIMING_OBJS) $(TRACKING_OBJS) $(BUILD_DIR)/main.o

@@ -33,6 +33,7 @@ void sparseLucasKanadeCPU(VideoInfo &video);
 
 void sparseLucasKanadeGPU(VideoInfo &video);
 void sparseLucasKanadeGPUTex(VideoInfo &video);
+void sparseLucasKanadeGPUMip(VideoInfo &video);
 
 void denseLucasKanadeCPU(VideoInfo &video);
 
