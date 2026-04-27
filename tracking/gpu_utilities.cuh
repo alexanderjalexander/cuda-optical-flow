@@ -1,8 +1,17 @@
 #ifndef GPU_UTILITIES_CUH
 #define GPU_UTILITIES_CUH
 
-/**
+#define CUDA_CHECK(call) \
+    { \
+        cudaError_t err = (call); \
+        if (err != cudaSuccess) \
+        { \
+            printf("CUDA error at %s:%d — %s\n", __FILE__, __LINE__, cudaGetErrorString(err)); \
+            return; \
+        } \
+    }
 
+/**
 Terminology for the functions that load shared memory:
 
 * Global data is the "input" to be loaded.
@@ -10,7 +19,6 @@ Terminology for the functions that load shared memory:
 * Blocks are hardware-backed groups of threads on the GPU.
 * Tiles are conceptual groups of threads that load data from global to shared memory. They are the same as Blocks when
 using 2D blocks and grids, but not with 1D blocks and grids.
-
 */
 
 /**
