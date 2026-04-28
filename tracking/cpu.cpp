@@ -50,6 +50,17 @@ sparseLucasKanadeCPU(VideoInfo &video)
         vector<uchar> status;
         vector<float> err;
         TermCriteria criteria = TermCriteria((TermCriteria::COUNT) + (TermCriteria::EPS), LK_ITERATIONS, LK_EPSILON);
+
+        if (p0.empty())
+        {
+            // just putting this in so we don't get a core dump.
+            // unless we want feature replenishment, then we can implement that as needed
+            drawSparseOpticalFlow(output, mask, p0, p1, status, pt_colors, DRAW_CONTINUOUS_LINES);
+            video.outputFrames.push_back(output);
+            old_frame = frame.clone();
+            continue;
+        }
+
         calcOpticalFlowPyrLK(old_frame, frame, p0, p1, status, err, Size(LK_WINDOW_WIDTH, LK_WINDOW_WIDTH),
                              MAX_PYR_LEVELS - 1, criteria);
 
