@@ -513,7 +513,6 @@ sparseLucasKanadeGPU(VideoInfo &video)
         /**
          * Algorithmic Considerations
          * - TODO: Gaussian Weighted Average (2:00 - https://www.youtube.com/watch?v=79Ty2Kkivvc)
-         * - TODO: Coarse-To-Fine            (2:55 - https://www.youtube.com/watch?v=79Ty2Kkivvc)
          * - TODO: Dynamic Feature Recalculation
          *   - If we lose a lot of features, recalculate and add new ones into our feature matrix
          */
@@ -521,7 +520,7 @@ sparseLucasKanadeGPU(VideoInfo &video)
         /**
          * Optimization/Efficiency Considerations
          * - TODO_DONE: Shared Memory
-         * - TODO: Texture Memory
+         * - TODO_DONE: Texture Memory
          * - TODO: Batched Frame Loading
          * - TODO: Asynchronous Memory Loading
          * - TODO: CUDA Streams

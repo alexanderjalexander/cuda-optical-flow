@@ -176,8 +176,8 @@ harrisThresholderMip(float3 *features, int *featureCount, float *response, float
 }
 
 /**
- * Kernel code to perform iterative Lucas Kanade on the features given between two
- * images.
+ * Kernel code to perform iterative, pyramidal Lucas Kanade on the features given
+ * between two images.
  *
  * Assumes that the block size used to initialize the kernel is the actual window
  * size we go off of. Ideally, the block dimensions should be LK_WINDOW_HALF *
@@ -189,10 +189,11 @@ harrisThresholderMip(float3 *features, int *featureCount, float *response, float
  * @param featureCount How many features we have in actuality.
  * @param width The image's width.
  * @param height The image's height.
+ * @param levels How many pyramidal levels exist.
  */
 __global__ void
-iterLucasKanadeSolverMip(cudaTextureObject_t frameTex, cudaTextureObject_t prevFrameTex, float3 *features,
-                         int *featureCount, int width, int height)
+iterPyrLucasKanadeSolverMip(cudaTextureObject_t frameTex, cudaTextureObject_t prevFrameTex, float3 *features,
+                         int *featureCount, int width, int height, int levels)
 {
     // usual per-thread registers/variables
     int tx = threadIdx.x;
@@ -213,8 +214,8 @@ iterLucasKanadeSolverMip(cudaTextureObject_t frameTex, cudaTextureObject_t prevF
     {
         return;
     }
-    int fx = (int)feature.x;
-    int fy = (int)feature.y;
+    int fx;
+    int fy;
 
     // define multiple shared memory blocks large enough to hold the internal values and the halos
     __shared__ float ixShared[LK_WINDOW_WIDTH][LK_WINDOW_WIDTH];
@@ -231,123 +232,146 @@ iterLucasKanadeSolverMip(cudaTextureObject_t frameTex, cudaTextureObject_t prevF
     __shared__ float u, v, du, dv, det;
     __shared__ bool invalidDet;
 
-    // Coordinates on GLOBAL image, relative to feature and thread index.
-    // Assuming block size of 15x15, 7,7 should be the very middle.
-    int baseX = fx - LK_WINDOW_WIDTH_HALF - SOBEL_MASK_RAD;
-    int baseY = fy - LK_WINDOW_WIDTH_HALF - SOBEL_MASK_RAD;
-
-    // TODO: Implement the coarse-to-fine loop starting from here.
-
-    // get the halos into shared memory, including halos
-    for (int i = ty; i < LK_WINDOW_WIDTH + (2 * SOBEL_MASK_RAD); i += LK_WINDOW_WIDTH)
+    // Go backwards up the coarse-to-fine loop
+    for (int currPyrLevel = levels - 1; currPyrLevel >= 0; currPyrLevel--)
     {
-        for (int j = tx; j < LK_WINDOW_WIDTH + (2 * SOBEL_MASK_RAD); j += LK_WINDOW_WIDTH)
+        fx = (int)feature.x >> currPyrLevel;
+        fy = (int)feature.y >> currPyrLevel;
+
+        // Coordinates on GLOBAL image, relative to feature and thread index.
+        // Assuming block size of 15x15, 7,7 should be the very middle.
+        int baseX = fx - LK_WINDOW_WIDTH_HALF - SOBEL_MASK_RAD;
+        int baseY = fy - LK_WINDOW_WIDTH_HALF - SOBEL_MASK_RAD;
+
+        // get the halos into shared memory, including halos
+        for (int i = ty; i < LK_WINDOW_WIDTH + (2 * SOBEL_MASK_RAD); i += LK_WINDOW_WIDTH)
         {
-            prevFrameShared[i][j] =
-                (unsigned char)(tex2DLod<float>(prevFrameTex, (baseX + j + 0.5f)/width, (baseY + i + 0.5f)/height, 0.0f) * 255.0f);
-        }
-    }
-    __syncthreads();
-
-    // Load with bounds checking - clamp to zero if out of bounds
-    int fsY = ty + SOBEL_MASK_RAD;
-    int fsX = tx + SOBEL_MASK_RAD;
-
-    float dx = (-1.0f * prevFrameShared[fsY - 1][fsX - 1]) + (-2.0f * prevFrameShared[fsY][fsX - 1]) +
-               (-1.0f * prevFrameShared[fsY + 1][fsX - 1]) + (1.0f * prevFrameShared[fsY - 1][fsX + 1]) +
-               (2.0f * prevFrameShared[fsY][fsX + 1]) + (1.0f * prevFrameShared[fsY + 1][fsX + 1]);
-
-    float dy = (-1.0f * prevFrameShared[fsY - 1][fsX - 1]) + (-2.0f * prevFrameShared[fsY - 1][fsX]) +
-               (-1.0f * prevFrameShared[fsY - 1][fsX + 1]) + (1.0f * prevFrameShared[fsY + 1][fsX - 1]) +
-               (2.0f * prevFrameShared[fsY + 1][fsX]) + (1.0f * prevFrameShared[fsY + 1][fsX + 1]);
-
-    ixShared[ty][tx] = dx / 8.0f;
-    iyShared[ty][tx] = dy / 8.0f;
-
-    __syncthreads();
-
-    // Let thread 0 do this
-    if (flatIdx == 0)
-    {
-        u = v = du = dv = 0.0f;
-    }
-    __syncthreads();
-
-    // Per-thread calculation of ixx, iyy, and ixy
-    ixxShared[flatIdx] = ixShared[ty][tx] * ixShared[ty][tx];
-    iyyShared[flatIdx] = iyShared[ty][tx] * iyShared[ty][tx];
-    ixyShared[flatIdx] = ixShared[ty][tx] * iyShared[ty][tx];
-    __syncthreads();
-
-    // Giant Reduction Sum for the three big sums, Ixx, Iyy, and Ixy
-    for (unsigned int stride = reductionStride; stride >= 1; stride >>= 1)
-    {
-        if (flatIdx < stride && (flatIdx + stride) < (LK_WINDOW_NUM))
-        {
-            ixxShared[flatIdx] += ixxShared[flatIdx + stride];
-            iyyShared[flatIdx] += iyyShared[flatIdx + stride];
-            ixyShared[flatIdx] += ixyShared[flatIdx + stride];
+            for (int j = tx; j < LK_WINDOW_WIDTH + (2 * SOBEL_MASK_RAD); j += LK_WINDOW_WIDTH)
+            {
+                prevFrameShared[i][j] =
+                    (unsigned char)
+                    (255.0f * tex2DLod<float>(
+                        prevFrameTex,
+                        (baseX + j + 0.5f)/(width >> currPyrLevel),
+                        (baseY + i + 0.5f)/(height >> currPyrLevel),
+                        (float)currPyrLevel));
+            }
         }
         __syncthreads();
-    }
 
-    // Determinant check before calculation proceeds
-    if (flatIdx == 0)
-    {
-        det = ixxShared[0] * iyyShared[0] - (ixyShared[0] * ixyShared[0]);
-        invalidDet = (fabs(det) < 1e-6f);
-    }
+        // Load with bounds checking - clamp to zero if out of bounds
+        int fsY = ty + SOBEL_MASK_RAD;
+        int fsX = tx + SOBEL_MASK_RAD;
 
-    __syncthreads();
+        float dx = (-1.0f * prevFrameShared[fsY - 1][fsX - 1]) + (-2.0f * prevFrameShared[fsY][fsX - 1]) +
+                (-1.0f * prevFrameShared[fsY + 1][fsX - 1]) + (1.0f * prevFrameShared[fsY - 1][fsX + 1]) +
+                (2.0f * prevFrameShared[fsY][fsX + 1]) + (1.0f * prevFrameShared[fsY + 1][fsX + 1]);
 
-    if (invalidDet)
-    {
+        float dy = (-1.0f * prevFrameShared[fsY - 1][fsX - 1]) + (-2.0f * prevFrameShared[fsY - 1][fsX]) +
+                (-1.0f * prevFrameShared[fsY - 1][fsX + 1]) + (1.0f * prevFrameShared[fsY + 1][fsX - 1]) +
+                (2.0f * prevFrameShared[fsY + 1][fsX]) + (1.0f * prevFrameShared[fsY + 1][fsX + 1]);
+
+        ixShared[ty][tx] = dx / 8.0f;
+        iyShared[ty][tx] = dy / 8.0f;
+
+        __syncthreads();
+
+        // Let thread 0 do this
         if (flatIdx == 0)
         {
-            features[featureNum].z = 0;
+            // Instantiate new value if we're starting
+            if (currPyrLevel == levels - 1)
+            {
+                u = v = 0.0f;
+            }
+            // Otherwise, multiply by 2.
+            else
+            {
+                u *= 2.0f;
+                v *= 2.0f;
+            }
+            // Refresh du and dv on each iteration.
+            du = dv = 0.0f;
         }
-        return;
-    }
-
-    // Giant Iteration Loop
-    for (int iteration = 0; iteration < LK_ITERATIONS; iteration++)
-    {
-        float warpedX = (fx + u + (tx - LK_WINDOW_WIDTH_HALF) + 0.5f)/width;
-        float warpedY = (fy + v + (ty - LK_WINDOW_WIDTH_HALF) + 0.5f)/height;
-
-        float it = (tex2DLod<float>(frameTex, warpedX, warpedY, 0.0f) * 255.0f) -
-                   (float)prevFrameShared[fsY][fsX];
-
-        ixtShared[flatIdx] = ixShared[ty][tx] * it;
-        iytShared[flatIdx] = iyShared[ty][tx] * it;
-
         __syncthreads();
 
-        // Giant Reduction Sum for the remaining big sums, Ixt and Iyt
+        // Per-thread, per-pyramid calculation of ixx, iyy, and ixy
+        ixxShared[flatIdx] = ixShared[ty][tx] * ixShared[ty][tx];
+        iyyShared[flatIdx] = iyShared[ty][tx] * iyShared[ty][tx];
+        ixyShared[flatIdx] = ixShared[ty][tx] * iyShared[ty][tx];
+        __syncthreads();
+
+        // Giant Reduction Sum for the three big sums, Ixx, Iyy, and Ixy
         for (unsigned int stride = reductionStride; stride >= 1; stride >>= 1)
         {
-            if (flatIdx < stride && (flatIdx + stride) < LK_WINDOW_NUM)
+            if (flatIdx < stride && (flatIdx + stride) < (LK_WINDOW_NUM))
             {
-                ixtShared[flatIdx] += ixtShared[flatIdx + stride];
-                iytShared[flatIdx] += iytShared[flatIdx + stride];
+                ixxShared[flatIdx] += ixxShared[flatIdx + stride];
+                iyyShared[flatIdx] += iyyShared[flatIdx + stride];
+                ixyShared[flatIdx] += ixyShared[flatIdx + stride];
             }
             __syncthreads();
         }
 
+        // Determinant check before calculation proceeds
         if (flatIdx == 0)
         {
-            du = ((iyyShared[0] * -ixtShared[0]) + (-ixyShared[0] * -iytShared[0])) / det;
-            dv = ((-ixyShared[0] * -ixtShared[0]) + (ixxShared[0] * -iytShared[0])) / det;
-
-            u += du;
-            v += dv;
+            det = ixxShared[0] * iyyShared[0] - (ixyShared[0] * ixyShared[0]);
+            invalidDet = (fabs(det) < 1e-6f);
         }
+
         __syncthreads();
 
-        // Convergence check
-        if (du * du + dv * dv < LK_EPSILON)
+        if (invalidDet)
         {
-            break;
+            if (flatIdx == 0)
+            {
+                features[featureNum].z = 0;
+            }
+            return;
+        }
+
+        // Giant Iteration Loop
+        for (int iteration = 0; iteration < LK_ITERATIONS; iteration++)
+        {
+            float warpedX = (fx + u + (tx - LK_WINDOW_WIDTH_HALF) + 0.5f)/(width >> currPyrLevel);
+            float warpedY = (fy + v + (ty - LK_WINDOW_WIDTH_HALF) + 0.5f)/(height >> currPyrLevel);
+
+            float it = (tex2DLod<float>(frameTex, warpedX, warpedY, (float)currPyrLevel) * 255.0f) -
+                    (float)prevFrameShared[fsY][fsX];
+
+            ixtShared[flatIdx] = ixShared[ty][tx] * it;
+            iytShared[flatIdx] = iyShared[ty][tx] * it;
+
+            __syncthreads();
+
+            // Giant Reduction Sum for the remaining big sums, Ixt and Iyt
+            for (unsigned int stride = reductionStride; stride >= 1; stride >>= 1)
+            {
+                if (flatIdx < stride && (flatIdx + stride) < LK_WINDOW_NUM)
+                {
+                    ixtShared[flatIdx] += ixtShared[flatIdx + stride];
+                    iytShared[flatIdx] += iytShared[flatIdx + stride];
+                }
+                __syncthreads();
+            }
+
+            if (flatIdx == 0)
+            {
+                du = ((iyyShared[0] * -ixtShared[0]) + (-ixyShared[0] * -iytShared[0])) / det;
+                dv = ((-ixyShared[0] * -ixtShared[0]) + (ixxShared[0] * -iytShared[0])) / det;
+
+                u += du;
+                v += dv;
+            }
+            __syncthreads();
+
+            // Convergence check
+            if (du * du + dv * dv < LK_EPSILON)
+            {
+                break;
+            }
+            __syncthreads();
         }
         __syncthreads();
     }
@@ -486,10 +510,12 @@ sparseLucasKanadeGPUMip(VideoInfo &video)
     int *deviceFrameFeatureCount = NULL;
     float *deviceResponse = NULL;
 
+    int levels = MAX_PYR_LEVELS;
+
     // === Memory Allocation ===
 
-    cudaMallocMipmappedArray(&deviceFrameMipMap, &channelDesc, extent, MAX_PYR_LEVELS);
-    cudaMallocMipmappedArray(&devicePrevFrameMipMap, &channelDesc, extent, MAX_PYR_LEVELS);
+    cudaMallocMipmappedArray(&deviceFrameMipMap, &channelDesc, extent, levels);
+    cudaMallocMipmappedArray(&devicePrevFrameMipMap, &channelDesc, extent, levels);
 
     cudaMalloc(&deviceFrameFeatures, MAX_FEATURES * sizeof(float3));
     cudaMalloc(&deviceFrameFeatureCount, sizeof(int));
@@ -511,8 +537,8 @@ sparseLucasKanadeGPUMip(VideoInfo &video)
     CUDA_CHECK(cudaMemcpy2DToArray(level0, 0, 0, video.frames[0].data, width * sizeof(u_char), width * sizeof(u_char), height,
                         cudaMemcpyHostToDevice));
 
-    generateMipMaps(&devicePrevFrameMipMap, &extent, MAX_PYR_LEVELS);
-    generateMipMaps(&deviceFrameMipMap, &extent, MAX_PYR_LEVELS);
+    generateMipMaps(&devicePrevFrameMipMap, &extent, levels);
+    generateMipMaps(&deviceFrameMipMap, &extent, levels);
 
     // === Texture Memory Declaration & Initialization ===
 
@@ -527,7 +553,7 @@ sparseLucasKanadeGPUMip(VideoInfo &video)
     texDesc.normalizedCoords = 1;
     texDesc.mipmapFilterMode = cudaFilterModePoint;
     texDesc.minMipmapLevelClamp = 0.0f;
-    texDesc.maxMipmapLevelClamp = (float)(MAX_PYR_LEVELS - 1);
+    texDesc.maxMipmapLevelClamp = (float)(levels - 1);
 
     resDesc.res.mipmap.mipmap = deviceFrameMipMap;
     CUDA_CHECK(cudaCreateTextureObject(&deviceFrameTex, &resDesc, &texDesc, nullptr));
@@ -592,15 +618,15 @@ sparseLucasKanadeGPUMip(VideoInfo &video)
         cudaMemcpy2DToArray(level0, 0, 0, video.frames[i].data, width * sizeof(u_char), width * sizeof(u_char), height,
                             cudaMemcpyHostToDevice);
 
-        generateMipMaps(&deviceFrameMipMap, &extent, MAX_PYR_LEVELS);
+        generateMipMaps(&deviceFrameMipMap, &extent, levels);
 
         cudaDestroyTextureObject(deviceFrameTex);
         resDesc.res.mipmap.mipmap = deviceFrameMipMap;
         cudaCreateTextureObject(&deviceFrameTex, &resDesc, &texDesc, nullptr);
 
         // Obtain Lucas Kanade Solve on 1 dimensional grid/block array
-        iterLucasKanadeSolverMip<<<featureGridDim, featureBlockDim>>>(
-            deviceFrameTex, devicePrevFrameTex, deviceFrameFeatures, deviceFrameFeatureCount, width, height);
+        iterPyrLucasKanadeSolverMip<<<featureGridDim, featureBlockDim>>>(
+            deviceFrameTex, devicePrevFrameTex, deviceFrameFeatures, deviceFrameFeatureCount, width, height, levels);
         cudaDeviceSynchronize();
 
         cudaMemcpy(frameFeatures, deviceFrameFeatures, featureCount * sizeof(float3), cudaMemcpyDeviceToHost);
