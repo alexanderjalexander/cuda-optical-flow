@@ -150,11 +150,11 @@ main(int argc, char *argv[])
     {
         // Run both algorithms in statistics mode
         int returnCode;
-        // if ((returnCode = recordStatsSparseLucasKanade(true, progFlags, video)) != EXIT_SUCCESS)
-        // {
-        //     return returnCode;
-        // }
         if ((returnCode = recordStatsSparseLucasKanade(false, progFlags, video)) != EXIT_SUCCESS)
+        {
+            return returnCode;
+        }
+        if ((returnCode = recordStatsSparseLucasKanade(true, progFlags, video)) != EXIT_SUCCESS)
         {
             return returnCode;
         }
