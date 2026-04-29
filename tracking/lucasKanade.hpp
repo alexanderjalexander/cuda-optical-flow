@@ -12,7 +12,7 @@
 
 #define MAX_FEATURES 500
 #define QUALITY_LEVEL 0.01
-#define MAX_PYR_LEVELS 2
+#define MAX_PYR_LEVELS 3
 
 #define SOBEL_MASK_SIZE 3
 #define SOBEL_MASK_RAD (SOBEL_MASK_SIZE / 2)
@@ -29,7 +29,7 @@
 #define LK_EPSILON 0.03
 #define LK_ITERATIONS 10
 
-void sparseLucasKanadeCPU(VideoInfo &video);
+void sparseLucasKanadeCPU(VideoInfo &video, bool pyramidal);
 
 void sparseLucasKanadeGPU(VideoInfo &video);
 void sparseLucasKanadeGPUTex(VideoInfo &video);

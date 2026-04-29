@@ -117,7 +117,7 @@ recordStatsSparseLucasKanade(bool onCPU, ProgramFlags progFlags, VideoInfo &vide
         auto startTime = high_resolution_clock::now();
         if (onCPU)
         {
-            sparseLucasKanadeCPU(video);
+            sparseLucasKanadeCPU(video, progFlags.mipMap);
         }
         else
         {

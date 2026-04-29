@@ -114,7 +114,7 @@ main(int argc, char *argv[])
     }
     else if (progFlags.mipMap)
     {
-        std::cout << "Mipmapped Texture Memory enabled." << std::endl;
+        std::cout << "Mipmapped Texture Memory & Pyramidal LK enabled." << std::endl;
     }
 
     // Parse options after arguments
@@ -169,7 +169,7 @@ main(int argc, char *argv[])
         std::cout << std::endl << "Starting CPU Lucas Kanade..." << std::endl;
         std::cout << "Frames to Process: " << video.frames.size() << std::endl;
         startStopwatch();
-        sparseLucasKanadeCPU(video);
+        sparseLucasKanadeCPU(video, progFlags.mipMap);
         stopStopwatch();
 
         std::cout << std::endl << "Writing CPU Lucas Kanade output to video..." << std::endl;

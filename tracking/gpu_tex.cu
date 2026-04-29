@@ -10,6 +10,9 @@
 
 #include <stdio.h>
 
+__constant__ float sobelGaussianKernel[(2 * SOBEL_MASK_RAD + 1)][(2 * SOBEL_MASK_RAD + 1)];
+__constant__ float harrisGaussianKernel[(2 * HARRIS_MASK_RAD + 1)][(2 * HARRIS_MASK_RAD + 1)];
+
 /**
  * Kernel code to obtain an image's Harris Response given the sobel derivatives.
  *
@@ -57,13 +60,24 @@ harrisResponseTex(float *response, cudaTextureObject_t frameTex, int width, int 
             int fsY = i + SOBEL_MASK_RAD;
             int fsX = j + SOBEL_MASK_RAD;
 
-            float dx = (-1.0f * frameShared[fsY - 1][fsX - 1]) + (-2.0f * frameShared[fsY][fsX - 1]) +
-                       (-1.0f * frameShared[fsY + 1][fsX - 1]) + (1.0f * frameShared[fsY - 1][fsX + 1]) +
-                       (2.0f * frameShared[fsY][fsX + 1]) + (1.0f * frameShared[fsY + 1][fsX + 1]);
+            float dx = 0.0f, dy = 0.0f;
 
-            float dy = (-1.0f * frameShared[fsY - 1][fsX - 1]) + (-2.0f * frameShared[fsY - 1][fsX]) +
-                       (-1.0f * frameShared[fsY - 1][fsX + 1]) + (1.0f * frameShared[fsY + 1][fsX - 1]) +
-                       (2.0f * frameShared[fsY + 1][fsX]) + (1.0f * frameShared[fsY + 1][fsX + 1]);
+            for (int sobY = -SOBEL_MASK_RAD; sobY <= SOBEL_MASK_RAD; sobY++)
+            {
+                for (int sobX = -SOBEL_MASK_RAD; sobX <= SOBEL_MASK_RAD; sobX++)
+                {
+                    float weight = sobelGaussianKernel[sobY + SOBEL_MASK_RAD][sobX + SOBEL_MASK_RAD];
+                    float pixel = (float)frameShared[fsY + sobY][fsX + sobX];
+                    if (sobX != 0)
+                    {
+                        dx += weight * (sobX < 0 ? -1.0f : 1.0f) * (sobY == 0 ? 2.0f : 1.0f) * pixel;
+                    }
+                    if (sobY != 0)
+                    {
+                        dy += weight * (sobY < 0 ? -1.0f : 1.0f) * (sobX == 0 ? 2.0f : 1.0f) * pixel;
+                    }
+                }
+            }
 
             ixShared[i][j] = dx / 8.0f;
             iyShared[i][j] = dy / 8.0f;
@@ -86,11 +100,12 @@ harrisResponseTex(float *response, cudaTextureObject_t frameTex, int width, int 
     {
         for (int dx = -HARRIS_MASK_RAD; dx <= HARRIS_MASK_RAD; dx++)
         {
+            float weight = harrisGaussianKernel[dy + HARRIS_MASK_RAD][dx + HARRIS_MASK_RAD];
             float gx = ixShared[ty_adj + dy][tx_adj + dx];
             float gy = iyShared[ty_adj + dy][tx_adj + dx];
-            sumIxx += gx * gx;
-            sumIyy += gy * gy;
-            sumIxy += gx * gy;
+            sumIxx += gx * gx * weight;
+            sumIyy += gy * gy * weight;
+            sumIxy += gx * gy * weight;
         }
     }
 
@@ -365,6 +380,70 @@ iterLucasKanadeSolverTex(cudaTextureObject_t frameTex, cudaTextureObject_t prevF
 }
 
 /**
+ * @brief Initializes sobelGaussianKernel with the appropriate Gaussian weights.
+ * @param sigma Value determining strength of gaussian filter. Supplied by default.
+ */
+void
+initSobelGaussianKernelTex(float sigma)
+{
+    constexpr int SIZE = 2 * SOBEL_MASK_RAD + 1;
+    float kernel[SIZE][SIZE];
+    float sum = 0.0f;
+
+    for (int y = -SOBEL_MASK_RAD; y <= SOBEL_MASK_RAD; y++)
+    {
+        for (int x = -SOBEL_MASK_RAD; x <= SOBEL_MASK_RAD; x++)
+        {
+            float val = expf(-(x * x + y * y) / (2.0f * sigma * sigma));
+            kernel[y + SOBEL_MASK_RAD][x + SOBEL_MASK_RAD] = val;
+            sum += val;
+        }
+    }
+
+    for (int i = 0; i < SIZE; i++)
+    {
+        for (int j = 0; j < SIZE; j++)
+        {
+            kernel[i][j] /= sum;
+        }
+    }
+
+    cudaMemcpyToSymbol(sobelGaussianKernel, kernel, SIZE * SIZE * sizeof(float));
+}
+
+/**
+ * @brief Initializes harrisGaussianKernel with the appropriate Gaussian weights.
+ * @param sigma Value determining strength of gaussian filter. Supplied by default.
+ */
+void
+initHarrisGaussianKernelTex(float sigma)
+{
+    constexpr int SIZE = 2 * HARRIS_MASK_RAD + 1;
+    float kernel[SIZE][SIZE];
+    float sum = 0.0f;
+
+    for (int y = -HARRIS_MASK_RAD; y <= HARRIS_MASK_RAD; y++)
+    {
+        for (int x = -HARRIS_MASK_RAD; x <= HARRIS_MASK_RAD; x++)
+        {
+            float val = expf(-(x * x + y * y) / (2.0f * sigma * sigma));
+            kernel[y + HARRIS_MASK_RAD][x + HARRIS_MASK_RAD] = val;
+            sum += val;
+        }
+    }
+
+    for (int i = 0; i < SIZE; i++)
+    {
+        for (int j = 0; j < SIZE; j++)
+        {
+            kernel[i][j] /= sum;
+        }
+    }
+
+    cudaMemcpyToSymbol(harrisGaussianKernel, kernel, SIZE * SIZE * sizeof(float));
+}
+
+/**
  * Host code that initiates a full flow of Sparse Lucas Kanade on the GPU.
  *
  * At first, this will calculate possibly good features, very similar to OpenCV's
@@ -391,6 +470,9 @@ sparseLucasKanadeGPUTex(VideoInfo &video)
     cv::Mat mask = cv::Mat::zeros(video.frames[0].size(), CV_8UC3);
 
     // === Pointer Declaration ===
+
+    initSobelGaussianKernelTex(SOBEL_MASK_RAD / 3.0f);
+    initHarrisGaussianKernelTex(HARRIS_MASK_RAD / 3.0f);
 
     cudaArray_t frameArray, prevFrameArray;
     cudaTextureObject_t frameTex = {}, prevFrameTex = {};
