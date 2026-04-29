@@ -22,8 +22,7 @@ using namespace chrono;
  * @param percentile The percentile to grab from the sorted data.
  * @return
  */
-template <typename T>
-T
+template <typename T> T
 calculatePercentile(const vector<T> &sortedData, double percentile)
 {
     if (sortedData.empty())
@@ -92,16 +91,18 @@ printStatistics(char *functionName, ExecStats &exec)
 }
 
 /**
- * @brief
+ * @brief Records statistics for CPU and GPU LK on a video.
  *
+ * Performs a long-ran statistics test to obtain relevant metrics to each LK version for this program.
+ * Obtains mean/min/max/count/std.dev/etc., and displays them.
  *
- *
- * @param onCPU
- * @param exec
- * @return
+ * @param onCPU Whether to run the test on the CPU LK algorithm or GPU LK algorithm.
+ * @param progFlags Flags passed in at program start.
+ * @param video The video to run the test on.
+ * @return EXIT_FAILURE or EXIT_SUCCESS
  */
 int
-recordStatsSparseLucasKanade(bool onCPU, VideoInfo &video)
+recordStatsSparseLucasKanade(bool onCPU, ProgramFlags progFlags, VideoInfo &video)
 {
     vector<duration<double>> execTimesVec;
     execTimesVec.reserve(STATISTICS_ITERATIONS);
@@ -118,11 +119,22 @@ recordStatsSparseLucasKanade(bool onCPU, VideoInfo &video)
         auto startTime = high_resolution_clock::now();
         if (onCPU)
         {
-            sparseLucasKanadeCPU(video);
+            sparseLucasKanadeCPU(video, progFlags.mipMap);
         }
         else
         {
-            sparseLucasKanadeGPU(video);
+            if (progFlags.textureMem)
+            {
+                sparseLucasKanadeGPUTex(video);
+            }
+            else if (progFlags.mipMap)
+            {
+                sparseLucasKanadeGPUMip(video);
+            }
+            else
+            {
+                sparseLucasKanadeGPU(video);
+            }
         }
         auto stopTime = high_resolution_clock::now();
         duration<double> sec = stopTime - startTime;

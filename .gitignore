@@ -2,9 +2,11 @@
 optflow
 build/
 outputs/
+giraffes/
 .cache/
 *.log
 .vscode/
+*.nsys-rep
 
 # CUDA .gitignore template
 *.i

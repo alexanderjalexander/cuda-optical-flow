@@ -19,7 +19,7 @@ using namespace std;
  * @param video the VideoInfo struct storing the initial frame's videos.
  */
 void
-sparseLucasKanadeCPU(VideoInfo &video)
+sparseLucasKanadeCPU(VideoInfo &video, bool pyramidal)
 {
     if (video.frames.empty())
     {
@@ -32,9 +32,8 @@ sparseLucasKanadeCPU(VideoInfo &video)
 
     vector<Point2f> p0, p1;
 
-    int blockSize = 3;
     bool useHarris = true;
-    goodFeaturesToTrack(old_frame, p0, MAX_FEATURES, QUALITY_LEVEL, HARRIS_DISTANCE, Mat(), blockSize, useHarris,
+    goodFeaturesToTrack(old_frame, p0, MAX_FEATURES, QUALITY_LEVEL, HARRIS_DISTANCE, Mat(), HARRIS_MASK_SIZE, (SOBEL_MASK_RAD / 3.0f), useHarris,
                         HARRIS_EPSILON);
 
     int initialFeatures = p0.size();
@@ -50,8 +49,19 @@ sparseLucasKanadeCPU(VideoInfo &video)
         vector<uchar> status;
         vector<float> err;
         TermCriteria criteria = TermCriteria((TermCriteria::COUNT) + (TermCriteria::EPS), LK_ITERATIONS, LK_EPSILON);
-        calcOpticalFlowPyrLK(old_frame, frame, p0, p1, status, err, Size(LK_WINDOW_WIDTH, LK_WINDOW_WIDTH), 2,
-                             criteria);
+
+        if (p0.empty())
+        {
+            // just putting this in so we don't get a core dump.
+            // unless we want feature replenishment, then we can implement that as needed
+            drawSparseOpticalFlow(output, mask, p0, p1, status, pt_colors, DRAW_CONTINUOUS_LINES);
+            video.outputFrames.push_back(output);
+            old_frame = frame.clone();
+            continue;
+        }
+
+        calcOpticalFlowPyrLK(old_frame, frame, p0, p1, status, err, Size(LK_WINDOW_WIDTH, LK_WINDOW_WIDTH),
+                             (pyramidal ? MAX_PYR_LEVELS - 1 : 0), criteria);
 
         drawSparseOpticalFlow(output, mask, p0, p1, status, pt_colors, DRAW_CONTINUOUS_LINES);
 

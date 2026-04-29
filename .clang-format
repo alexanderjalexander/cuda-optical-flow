@@ -41,6 +41,8 @@ QualifierAlignment: Left
 PointerAlignment: Right
 AllowShortFunctionsOnASingleLine: None
 AlwaysBreakAfterDefinitionReturnType: All
+AlwaysBreakTemplateDeclarations: false
+BreakTemplateDeclarations: No
 SeparateDefinitionBlocks: Always
 SpaceAfterCStyleCast: false
 AllowShortIfStatementsOnASingleLine: false

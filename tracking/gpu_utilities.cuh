@@ -1,13 +1,19 @@
 #ifndef GPU_UTILITIES_CUH
 #define GPU_UTILITIES_CUH
 
-#include "gpu_utilities.cuh"
 #include "lucasKanade.hpp"
 
-#include <stdio.h>
+#define CUDA_CHECK(call) \
+    { \
+        cudaError_t err = (call); \
+        if (err != cudaSuccess) \
+        { \
+            printf("CUDA error at %s:%d — %s\n", __FILE__, __LINE__, cudaGetErrorString(err)); \
+            return; \
+        } \
+    }
 
 /**
-
 Terminology for the functions that load shared memory:
 
 * Global data is the "input" to be loaded.
@@ -15,7 +21,6 @@ Terminology for the functions that load shared memory:
 * Blocks are hardware-backed groups of threads on the GPU.
 * Tiles are conceptual groups of threads that load data from global to shared memory. They are the same as Blocks when
 using 2D blocks and grids, but not with 1D blocks and grids.
-
 */
 
 /**
@@ -34,8 +39,7 @@ using 2D blocks and grids, but not with 1D blocks and grids.
  * @param xGlobal The index of the current thread within the global memory in the X axis.
  * @param yGlobal The index of the current thread within the global memory in the Y axis.
  */
-template <typename T>
-__device__ void
+template <typename T> __device__ void
 load2dSharedMemoryCore(T *shared, T *global, int halo_radius, int widthGlobal, int heightGlobal, int tileSize, int tx,
                        int ty, int xGlobal, int yGlobal)
 {
@@ -144,8 +148,7 @@ load2dSharedMemoryCore(T *shared, T *global, int halo_radius, int widthGlobal, i
  * @param widthGlobal The width (in elements) of the global memory data.
  * @param heightGlobal The height (in elements) of the global memory data.
  */
-template <typename T>
-__device__ void
+template <typename T> __device__ void
 load2dSharedMemoryWithHalo(T *shared, T *global, int halo_radius, int widthGlobal, int heightGlobal)
 {
     // with 2D blocks, tile == block
@@ -171,8 +174,7 @@ load2dSharedMemoryWithHalo(T *shared, T *global, int halo_radius, int widthGloba
  * @param widthGlobal The width (in elements) of the global memory data.
  * @param heightGlobal The height (in elements) of the global memory data.
  */
-template <typename T>
-__device__ void
+template <typename T> __device__ void
 load2dSharedMemoryWithHalo1dBlock(T *shared, T *global, int tileSize, int halo_radius, int widthGlobal,
                                   int heightGlobal)
 {
@@ -232,4 +234,5 @@ load2dSharedMemoryWithHalo1dBlock(T *shared, T *global, int tileSize, int halo_r
 
 //     __syncthreads();
 // }
+
 #endif

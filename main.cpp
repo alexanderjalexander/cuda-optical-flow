@@ -6,6 +6,7 @@
 #include "timing/statistics.hpp"
 #include "timing/stopwatch.hpp"
 #include "tracking/lucasKanade.hpp"
+#include "flags.hpp"
 
 #include <cstdlib>
 #include <filesystem>
@@ -17,6 +18,9 @@
 #include <sysexits.h>
 #include <unistd.h>
 
+/**
+ * @returns T/F depending on whether a CUDA device is available.
+ */
 static bool
 cudaDeviceAvailable()
 {
@@ -30,6 +34,9 @@ cudaDeviceAvailable()
     return true;
 }
 
+/**
+ * @returns T/F depending on whether a file path exists.
+ */
 static bool
 fileAtPathExists(char *path)
 {
@@ -38,6 +45,9 @@ fileAtPathExists(char *path)
     return std::filesystem::exists(absPath);
 }
 
+/**
+ * @returns A canonical path to a file on the system.
+ */
 static std::filesystem::path
 returnCanonicalFilePath(std::string path)
 {
@@ -45,6 +55,11 @@ returnCanonicalFilePath(std::string path)
     return std::filesystem::canonical(strPath);
 }
 
+/**
+ * Makes a path to a desired output file to be created. Creates directories if they need to be made.
+ *
+ * @returns A new path to a file on the output.
+ */
 static std::filesystem::path
 returnOutputFilePath(std::filesystem::path path, std::string suffix)
 {
@@ -55,21 +70,17 @@ returnOutputFilePath(std::filesystem::path path, std::string suffix)
     return outputPath;
 }
 
-const char flagChars[] = "s";
+const char flagChars[] = "stm";
 
 static void
 usage(const char *progname)
 {
     fprintf(stderr, "Usage: %s [-%s] videoName\n", progname, flagChars);
     fprintf(stderr, "\t-s --> Run in 'Statistics Mode'\n");
-    fprintf(stderr, "*NOTE* videoName is an input file within the /inputs folder, and must not "
-                    "contain the video extension. It is expected to be a .mp4 file.\n");
+    fprintf(stderr, "\t-s --> Run with Texture Memory\n");
+    fprintf(stderr, "\t-s --> Run with Mipmapped Texture Memory\n");
+    fprintf(stderr, "*NOTE* videoName is the relative path to a file, extension included.\n");
 }
-
-struct ProgramFlags
-{
-    bool statsMode;
-};
 
 int
 main(int argc, char *argv[])
@@ -97,10 +108,27 @@ main(int argc, char *argv[])
             std::cout << "Statistics Mode enabled." << std::endl;
             progFlags.statsMode = true;
             break;
+        case 't':
+            progFlags.textureMem = true;
+            progFlags.mipMap = false;
+            break;
+        case 'm':
+            progFlags.mipMap = true;
+            progFlags.textureMem = false;
+            break;
         default:
             usage(progname);
             return EX_USAGE;
         }
+    }
+
+    if (progFlags.textureMem)
+    {
+        std::cout << "Classic Texture Memory enabled." << std::endl;
+    }
+    else if (progFlags.mipMap)
+    {
+        std::cout << "Mipmapped Texture Memory & Pyramidal LK enabled." << std::endl;
     }
 
     // Parse options after arguments
@@ -136,11 +164,11 @@ main(int argc, char *argv[])
     {
         // Run both algorithms in statistics mode
         int returnCode;
-        if ((returnCode = recordStatsSparseLucasKanade(true, video)) != EXIT_SUCCESS)
+        if ((returnCode = recordStatsSparseLucasKanade(false, progFlags, video)) != EXIT_SUCCESS)
         {
             return returnCode;
         }
-        if ((returnCode = recordStatsSparseLucasKanade(false, video)) != EXIT_SUCCESS)
+        if ((returnCode = recordStatsSparseLucasKanade(true, progFlags, video)) != EXIT_SUCCESS)
         {
             return returnCode;
         }
@@ -155,7 +183,7 @@ main(int argc, char *argv[])
         std::cout << std::endl << "Starting CPU Lucas Kanade..." << std::endl;
         std::cout << "Frames to Process: " << video.frames.size() << std::endl;
         startStopwatch();
-        sparseLucasKanadeCPU(video);
+        sparseLucasKanadeCPU(video, progFlags.mipMap);
         stopStopwatch();
 
         std::cout << std::endl << "Writing CPU Lucas Kanade output to video..." << std::endl;
@@ -173,7 +201,18 @@ main(int argc, char *argv[])
         std::cout << std::endl << "Starting GPU Lucas Kanade..." << std::endl;
         std::cout << "Frames to Process: " << video.frames.size() << std::endl;
         startStopwatch();
-        sparseLucasKanadeGPU(video);
+        if (progFlags.textureMem)
+        {
+            sparseLucasKanadeGPUTex(video);
+        }
+        else if (progFlags.mipMap)
+        {
+            sparseLucasKanadeGPUMip(video);
+        }
+        else
+        {
+            sparseLucasKanadeGPU(video);
+        }
         stopStopwatch();
 
         std::cout << std::endl << "Writing GPU Lucas Kanade output to video..." << std::endl;
