@@ -91,13 +91,15 @@ printStatistics(char *functionName, ExecStats &exec)
 }
 
 /**
- * @brief
+ * @brief Records statistics for CPU and GPU LK on a video.
  *
+ * Performs a long-ran statistics test to obtain relevant metrics to each LK version for this program.
+ * Obtains mean/min/max/count/std.dev/etc., and displays them.
  *
- *
- * @param onCPU
- * @param exec
- * @return
+ * @param onCPU Whether to run the test on the CPU LK algorithm or GPU LK algorithm.
+ * @param progFlags Flags passed in at program start.
+ * @param video The video to run the test on.
+ * @return EXIT_FAILURE or EXIT_SUCCESS
  */
 int
 recordStatsSparseLucasKanade(bool onCPU, ProgramFlags progFlags, VideoInfo &video)

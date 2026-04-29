@@ -18,6 +18,9 @@
 #include <sysexits.h>
 #include <unistd.h>
 
+/**
+ * @returns T/F depending on whether a CUDA device is available.
+ */
 static bool
 cudaDeviceAvailable()
 {
@@ -31,6 +34,9 @@ cudaDeviceAvailable()
     return true;
 }
 
+/**
+ * @returns T/F depending on whether a file path exists.
+ */
 static bool
 fileAtPathExists(char *path)
 {
@@ -39,6 +45,9 @@ fileAtPathExists(char *path)
     return std::filesystem::exists(absPath);
 }
 
+/**
+ * @returns A canonical path to a file on the system.
+ */
 static std::filesystem::path
 returnCanonicalFilePath(std::string path)
 {
@@ -46,6 +55,11 @@ returnCanonicalFilePath(std::string path)
     return std::filesystem::canonical(strPath);
 }
 
+/**
+ * Makes a path to a desired output file to be created. Creates directories if they need to be made.
+ *
+ * @returns A new path to a file on the output.
+ */
 static std::filesystem::path
 returnOutputFilePath(std::filesystem::path path, std::string suffix)
 {
