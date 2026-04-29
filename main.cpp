@@ -70,15 +70,16 @@ returnOutputFilePath(std::filesystem::path path, std::string suffix)
     return outputPath;
 }
 
-const char flagChars[] = "stm";
+const char flagChars[] = "stma";
 
 static void
 usage(const char *progname)
 {
     fprintf(stderr, "Usage: %s [-%s] videoName\n", progname, flagChars);
     fprintf(stderr, "\t-s --> Run in 'Statistics Mode'\n");
-    fprintf(stderr, "\t-s --> Run with Texture Memory\n");
-    fprintf(stderr, "\t-s --> Run with Mipmapped Texture Memory\n");
+    fprintf(stderr, "\t-t --> Run with Texture Memory\n");
+    fprintf(stderr, "\t-m --> Run with Mipmapped Texture Memory\n");
+    fprintf(stderr, "\t-a --> Run with Asynchronous Streamed Memory Loading\n");
     fprintf(stderr, "*NOTE* videoName is the relative path to a file, extension included.\n");
 }
 
@@ -111,9 +112,16 @@ main(int argc, char *argv[])
         case 't':
             progFlags.textureMem = true;
             progFlags.mipMap = false;
+            progFlags.stream = false;
             break;
         case 'm':
             progFlags.mipMap = true;
+            progFlags.textureMem = false;
+            progFlags.stream = false;
+            break;
+        case 'a':
+            progFlags.stream = true;
+            progFlags.mipMap = false;
             progFlags.textureMem = false;
             break;
         default:
@@ -129,6 +137,10 @@ main(int argc, char *argv[])
     else if (progFlags.mipMap)
     {
         std::cout << "Mipmapped Texture Memory & Pyramidal LK enabled." << std::endl;
+    }
+    else if (progFlags.stream)
+    {
+        std::cout << "Asynchronous Streamed Memory Loading enabled." << std::endl;
     }
 
     // Parse options after arguments
@@ -208,6 +220,10 @@ main(int argc, char *argv[])
         else if (progFlags.mipMap)
         {
             sparseLucasKanadeGPUMip(video);
+        }
+        else if (progFlags.stream)
+        {
+            sparseLucasKanadeGPUStream(video);
         }
         else
         {

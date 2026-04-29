@@ -502,6 +502,14 @@ sparseLucasKanadeGPU(VideoInfo &video)
     int *deviceFrameFeatureCount = NULL;
     float *deviceResponse = NULL;
 
+    // === Stream Setup ===
+    # define NUM_STREAMS 3;
+    cudaStream_t streams[NUM_STREAMS]; // one stream for each direction of memory transfer
+    for (int i = 0; i < NUM_STREAMS; i++)
+    {
+        cudaStreamCreate(&streams[i]);
+    }
+
     // === Pointer Memory Allocation ===
 
     // TODO: Error check???
@@ -556,7 +564,8 @@ sparseLucasKanadeGPU(VideoInfo &video)
      */
     featureCount = min(featureCount, MAX_FEATURES);
     float3 *prevFrameFeatures = (float3 *)calloc(featureCount, sizeof(float3));
-    float3 *frameFeatures = (float3 *)calloc(featureCount, sizeof(float3));
+    // float3 *frameFeatures = (float3 *)calloc(featureCount, sizeof(float3));
+    float3 *frameFeatures = (float3 *)cudaMallocHost(featureCount * sizeof(float3)); // page-locked memory for async copying
     cudaMemcpy(prevFrameFeatures, deviceFrameFeatures, featureCount * sizeof(float3), cudaMemcpyDeviceToHost);
     std::vector<cv::Scalar> pt_colors = getRandomColors(featureCount);
 
@@ -572,16 +581,18 @@ sparseLucasKanadeGPU(VideoInfo &video)
         unsigned char *temp = devicePrevFrame;
         devicePrevFrame = deviceFrame;
         deviceFrame = temp;
-        cudaMemcpy(deviceFrame, video.frames[i].data, size, cudaMemcpyHostToDevice);
+        cudaStream_t stream = streams[i % NUM_STREAMS];
+        cudaMemcpyAsync(deviceFrame, video.frames[i].data, size, cudaMemcpyHostToDevice, stream);
 
         // Obtain Lucas Kanade Solve on 1 dimensional grid/block array
-        iterLucasKanadeSolver<<<featureGridDim, featureBlockDim>>>(deviceFrame, devicePrevFrame, deviceFrameFeatures,
-                                                                   deviceFrameFeatureCount, width, height);
-        cudaDeviceSynchronize();
+        iterLucasKanadeSolver<<<featureGridDim, featureBlockDim, 0, stream>>>(deviceFrame, devicePrevFrame, deviceFrameFeatures,
+                                                                              deviceFrameFeatureCount, width, height);
+        cudaStreamSynchronize(stream);
 
         // TODO: consider possibly abstracting the drawing to the GPU?
         // But then we still need to copy the output frame... argh...
-        cudaMemcpy(frameFeatures, deviceFrameFeatures, featureCount * sizeof(float3), cudaMemcpyDeviceToHost);
+        cudaMemcpyAsync(frameFeatures, deviceFrameFeatures, featureCount * sizeof(float3), cudaMemcpyDeviceToHost, stream);
+        cudaStreamSynchronize(stream);
 
         cv::Mat output;
         cvtColor(video.frames[i], output, cv::COLOR_GRAY2BGR);
@@ -604,14 +615,19 @@ sparseLucasKanadeGPU(VideoInfo &video)
          * - TODO_DONE: Texture Memory
          * - TODO: Batched Frame Loading
          * - TODO: Asynchronous Memory Loading
-         * - TODO: CUDA Streams
          */
     }
 
     // === Memory Freeing Procedure ===
 
+    for (int i = 0; i < NUM_STREAMS; i++)
+    {
+      cudaStreamDestroy(streams[i]);
+    }
+
     free(prevFrameFeatures);
-    free(frameFeatures);
+    // free(frameFeatures);
+    cudaFree(frameFeatures);
 
     cudaFree(deviceFrame);
     cudaFree(devicePrevFrame);
