@@ -32,9 +32,8 @@ sparseLucasKanadeCPU(VideoInfo &video)
 
     vector<Point2f> p0, p1;
 
-    int blockSize = 3;
     bool useHarris = true;
-    goodFeaturesToTrack(old_frame, p0, MAX_FEATURES, QUALITY_LEVEL, HARRIS_MASK_RAD, Mat(), blockSize, useHarris,
+    goodFeaturesToTrack(old_frame, p0, MAX_FEATURES, QUALITY_LEVEL, HARRIS_DISTANCE, Mat(), HARRIS_MASK_SIZE, (SOBEL_MASK_RAD / 3.0f), useHarris,
                         HARRIS_EPSILON);
 
     int initialFeatures = p0.size();

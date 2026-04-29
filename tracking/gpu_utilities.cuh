@@ -198,22 +198,6 @@ load2dSharedMemoryWithHalo1dBlock(T *shared, T *global, int tileSize, int halo_r
                               yGlobal);
 }
 
-__constant__ float sobelGaussianKernel[(2 * SOBEL_MASK_RAD + 1)][(2 * SOBEL_MASK_RAD + 1)];
-__constant__ float harrisGaussianKernel[(2 * HARRIS_MASK_RAD + 1)][(2 * HARRIS_MASK_RAD + 1)];
-
-/**
- * @brief Initializes sobelGaussianKernel with the appropriate Gaussian weights.
- * @param sigma Value determining strength of gaussian filter. Supplied by default.
- */
-void initSobelGaussianKernel(float sigma = (SOBEL_MASK_RAD / 0.3f));
-
-/**
- * @brief Initializes harrisGaussianKernel with the appropriate Gaussian weights.
- * @param sigma Value determining strength of gaussian filter. Supplied by default.
- */
-void initHarrisGaussianKernel(float sigma = (HARRIS_MASK_RAD / 0.3f));
-
-
 // todo broken 1D to 1D version
 
 // load1dSharedMemoryWithHalo1dBlock(T *shared, T *global, int halo_radius, int width, int height)
