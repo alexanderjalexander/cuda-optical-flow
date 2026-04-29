@@ -1,6 +1,8 @@
 #ifndef GPU_UTILITIES_CUH
 #define GPU_UTILITIES_CUH
 
+#include "lucasKanade.hpp"
+
 #define CUDA_CHECK(call) \
     { \
         cudaError_t err = (call); \
@@ -195,6 +197,22 @@ load2dSharedMemoryWithHalo1dBlock(T *shared, T *global, int tileSize, int halo_r
     load2dSharedMemoryCore<T>(shared, global, halo_radius, widthGlobal, heightGlobal, tileSize, tx, ty, xGlobal,
                               yGlobal);
 }
+
+__constant__ float sobelGaussianKernel[(2 * SOBEL_MASK_RAD + 1)][(2 * SOBEL_MASK_RAD + 1)];
+__constant__ float harrisGaussianKernel[(2 * HARRIS_MASK_RAD + 1)][(2 * HARRIS_MASK_RAD + 1)];
+
+/**
+ * @brief Initializes sobelGaussianKernel with the appropriate Gaussian weights.
+ * @param sigma Value determining strength of gaussian filter. Supplied by default.
+ */
+void initSobelGaussianKernel(float sigma = (SOBEL_MASK_RAD / 0.3f));
+
+/**
+ * @brief Initializes harrisGaussianKernel with the appropriate Gaussian weights.
+ * @param sigma Value determining strength of gaussian filter. Supplied by default.
+ */
+void initHarrisGaussianKernel(float sigma = (HARRIS_MASK_RAD / 0.3f));
+
 
 // todo broken 1D to 1D version
 

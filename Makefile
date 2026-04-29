@@ -7,16 +7,16 @@ FORMATTER = clang-format
 BUILD_DIR = build
 FLOW_PROG = optflow
 
-PROCESSING_OBJS = $(BUILD_DIR)/processing/video_io.o $(BUILD_DIR)/processing/drawing.o
 PROCESSING_SRCS = processing/video_io.cpp processing/drawing.cpp
+PROCESSING_OBJS = $(addprefix $(BUILD_DIR)/, $(patsubst %.cu,%.o, $(patsubst %.cpp,%.o, $(PROCESSING_SRCS))))
 PROCESSING_HDRS = processing/video_io.hpp processing/drawing.hpp
 
-TIMING_OBJS = $(BUILD_DIR)/timing/stopwatch.o $(BUILD_DIR)/timing/statistics.o
 TIMING_SRCS = timing/stopwatch.cpp timing/statistics.cpp
+TIMING_OBJS = $(addprefix $(BUILD_DIR)/, $(patsubst %.cu,%.o, $(patsubst %.cpp,%.o, $(TIMING_SRCS))))
 TIMING_HDRS = timing/stopwatch.hpp timing/statistics.hpp
 
-TRACKING_OBJS = $(BUILD_DIR)/tracking/cpu.o $(BUILD_DIR)/tracking/gpu.o $(BUILD_DIR)/tracking/gpu_tex.o $(BUILD_DIR)/tracking/gpu_mip.o
-TRACKING_SRCS = tracking/cpu.cpp tracking/gpu.cu tracking/gpu_tex.cu tracking/gpu_mip.cu
+TRACKING_SRCS = tracking/cpu.cpp tracking/gpu_utilities.cu tracking/gpu.cu tracking/gpu_tex.cu tracking/gpu_mip.cu
+TRACKING_OBJS = $(addprefix $(BUILD_DIR)/, $(patsubst %.cu,%.o, $(patsubst %.cpp,%.o, $(TRACKING_SRCS))))
 TRACKING_HDRS = tracking/lucasKanade.hpp tracking/gpu_utilities.cuh
 
 FLOW_OBJS = $(PROCESSING_OBJS) $(TIMING_OBJS) $(TRACKING_OBJS) $(BUILD_DIR)/main.o
