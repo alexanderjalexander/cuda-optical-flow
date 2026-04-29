@@ -2,6 +2,7 @@
 optflow
 build/
 outputs/
+giraffes/
 .cache/
 *.log
 .vscode/
