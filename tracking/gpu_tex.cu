@@ -456,7 +456,7 @@ initHarrisGaussianKernelTex(float sigma)
  * @param video the VideoInfo struct storing the initial frame's videos.
  */
 void
-sparseLucasKanadeGPUTex(VideoInfo &video)
+sparseLucasKanadeGPUTex(VideoInfo &video, ProgramFlags flags)
 {
     if (video.frames.empty())
     {

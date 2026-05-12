@@ -19,7 +19,7 @@ using namespace std;
  * @param video the VideoInfo struct storing the initial frame's videos.
  */
 void
-sparseLucasKanadeCPU(VideoInfo &video, bool pyramidal)
+sparseLucasKanadeCPU(VideoInfo &video, ProgramFlags flags)
 {
     if (video.frames.empty())
     {
@@ -61,7 +61,7 @@ sparseLucasKanadeCPU(VideoInfo &video, bool pyramidal)
         }
 
         calcOpticalFlowPyrLK(old_frame, frame, p0, p1, status, err, Size(LK_WINDOW_WIDTH, LK_WINDOW_WIDTH),
-                             (pyramidal ? MAX_PYR_LEVELS - 1 : 0), criteria);
+                             (flags.mipMap ? MAX_PYR_LEVELS - 1 : 0), criteria);
 
         drawSparseOpticalFlow(output, mask, p0, p1, status, pt_colors, DRAW_CONTINUOUS_LINES);
 

@@ -565,7 +565,7 @@ initHarrisGaussianKernelMip(float sigma)
  * @param video the VideoInfo struct storing the initial frame's videos.
  */
 void
-sparseLucasKanadeGPUMip(VideoInfo &video)
+sparseLucasKanadeGPUMip(VideoInfo &video, ProgramFlags flags)
 {
     if (video.frames.empty())
     {

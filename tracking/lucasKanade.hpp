@@ -4,6 +4,7 @@
 #include <opencv2/opencv.hpp>
 
 #include "../processing/video_io.hpp"
+#include "../flags.hpp"
 
 // Good, universal block size.
 #define BLOCK_SIZE 16
@@ -29,12 +30,12 @@
 #define LK_EPSILON 0.03
 #define LK_ITERATIONS 10
 
-void sparseLucasKanadeCPU(VideoInfo &video, bool pyramidal);
+void sparseLucasKanadeCPU(VideoInfo &video, ProgramFlags flags);
 
-void sparseLucasKanadeGPU(VideoInfo &video);
-void sparseLucasKanadeGPUTex(VideoInfo &video);
-void sparseLucasKanadeGPUMip(VideoInfo &video);
+void sparseLucasKanadeGPU(VideoInfo &video, ProgramFlags flags);
+void sparseLucasKanadeGPUTex(VideoInfo &video, ProgramFlags flags);
+void sparseLucasKanadeGPUMip(VideoInfo &video, ProgramFlags flags);
 
-void denseLucasKanadeCPU(VideoInfo &video);
+void denseLucasKanadeCPU(VideoInfo &video, ProgramFlags flags);
 
 #endif
