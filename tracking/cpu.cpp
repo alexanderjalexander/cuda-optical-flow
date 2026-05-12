@@ -33,8 +33,8 @@ sparseLucasKanadeCPU(VideoInfo &video, ProgramFlags flags)
     vector<Point2f> p0, p1;
 
     bool useHarris = true;
-    goodFeaturesToTrack(old_frame, p0, MAX_FEATURES, QUALITY_LEVEL, HARRIS_DISTANCE, Mat(), HARRIS_MASK_SIZE, (SOBEL_MASK_RAD / 3.0f), useHarris,
-                        HARRIS_EPSILON);
+    goodFeaturesToTrack(old_frame, p0, MAX_FEATURES, QUALITY_LEVEL, HARRIS_DISTANCE, Mat(), HARRIS_MASK_SIZE,
+                        (SOBEL_MASK_RAD / 3.0f), useHarris, HARRIS_EPSILON);
 
     int initialFeatures = p0.size();
 
@@ -117,7 +117,7 @@ sparseLucasKanadeCPU(VideoInfo &video, ProgramFlags flags)
  * @param video the VideoInfo struct storing the initial frame's videos.
  */
 void
-denseLucasKanadeCPU(VideoInfo &video)
+denseLucasKanadeCPU(VideoInfo &video, ProgramFlags flags)
 {
     if (video.frames.empty())
     {

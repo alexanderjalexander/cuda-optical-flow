@@ -2,11 +2,11 @@
 #include <opencv2/opencv.hpp>
 #include <sys/stat.h>
 
+#include "flags.hpp"
 #include "processing/video_io.hpp"
 #include "timing/statistics.hpp"
 #include "timing/stopwatch.hpp"
 #include "tracking/lucasKanade.hpp"
-#include "flags.hpp"
 
 #include <cstdlib>
 #include <filesystem>
