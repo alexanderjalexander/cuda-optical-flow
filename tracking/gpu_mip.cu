@@ -382,7 +382,7 @@ iterPyrLucasKanadeSolverMip(cudaTextureObject_t frameTex, cudaTextureObject_t pr
             __syncthreads();
 
             // Convergence check
-            if (du * du + dv * dv < LK_EPSILON)
+            if (du * du + dv * dv < LK_EPSILON * LK_EPSILON)
             {
                 break;
             }
@@ -398,7 +398,7 @@ iterPyrLucasKanadeSolverMip(cudaTextureObject_t frameTex, cudaTextureObject_t pr
         float updatedY = (feature.y + v);
         float status = feature.z;
 
-        if (updatedX < 0 || updatedX >= width || updatedY < 0 || updatedY >= height)
+        if (updatedX < 1 || updatedX > width - 2 || updatedY < 1 || updatedY > height - 2)
         {
             status = 0;
         }
@@ -565,7 +565,7 @@ initHarrisGaussianKernelMip(float sigma)
  * @param video the VideoInfo struct storing the initial frame's videos.
  */
 void
-sparseLucasKanadeGPUMip(VideoInfo &video)
+sparseLucasKanadeGPUMip(VideoInfo &video, ProgramFlags flags)
 {
     if (video.frames.empty())
     {
@@ -713,14 +713,22 @@ sparseLucasKanadeGPUMip(VideoInfo &video)
 
         cudaMemcpy(frameFeatures, deviceFrameFeatures, featureCount * sizeof(float3), cudaMemcpyDeviceToHost);
 
-        cv::Mat output;
-        cvtColor(video.frames[i], output, cv::COLOR_GRAY2BGR);
-        drawSparseOpticalFlowGPU(output, mask, reinterpret_cast<cv::Vec3f *>(prevFrameFeatures),
-                                 reinterpret_cast<cv::Vec3f *>(frameFeatures), featureCount, pt_colors,
-                                 DRAW_CONTINUOUS_LINES);
+        if (flags.correctness)
+        {
+            compareGPULucasKanadeFlow(video.frames[i-1], video.frames[i], reinterpret_cast<cv::Vec3f *>(prevFrameFeatures),
+                                    reinterpret_cast<cv::Vec3f *>(frameFeatures), featureCount, flags);
+        }
+        else
+        {
+            cv::Mat output;
+            cvtColor(video.frames[i], output, cv::COLOR_GRAY2BGR);
+            drawSparseOpticalFlowGPU(output, mask, reinterpret_cast<cv::Vec3f *>(prevFrameFeatures),
+                                    reinterpret_cast<cv::Vec3f *>(frameFeatures), featureCount, pt_colors,
+                                    DRAW_CONTINUOUS_LINES);
+            video.outputFrames.push_back(output);
+        }
 
         std::memcpy(prevFrameFeatures, frameFeatures, featureCount * sizeof(float3));
-        video.outputFrames.push_back(output);
     }
 
     // === Memory Freeing Procedure ===

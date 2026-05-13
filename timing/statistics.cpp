@@ -119,21 +119,21 @@ recordStatsSparseLucasKanade(bool onCPU, ProgramFlags progFlags, VideoInfo &vide
         auto startTime = high_resolution_clock::now();
         if (onCPU)
         {
-            sparseLucasKanadeCPU(video, progFlags.mipMap);
+            sparseLucasKanadeCPU(video, progFlags);
         }
         else
         {
             if (progFlags.textureMem)
             {
-                sparseLucasKanadeGPUTex(video);
+                sparseLucasKanadeGPUTex(video, progFlags);
             }
             else if (progFlags.mipMap)
             {
-                sparseLucasKanadeGPUMip(video);
+                sparseLucasKanadeGPUMip(video, progFlags);
             }
             else
             {
-                sparseLucasKanadeGPU(video);
+                sparseLucasKanadeGPU(video, progFlags);
             }
         }
         auto stopTime = high_resolution_clock::now();

@@ -2,11 +2,11 @@
 #include <opencv2/opencv.hpp>
 #include <sys/stat.h>
 
+#include "flags.hpp"
 #include "processing/video_io.hpp"
 #include "timing/statistics.hpp"
 #include "timing/stopwatch.hpp"
 #include "tracking/lucasKanade.hpp"
-#include "flags.hpp"
 
 #include <cstdlib>
 #include <filesystem>
@@ -70,15 +70,16 @@ returnOutputFilePath(std::filesystem::path path, std::string suffix)
     return outputPath;
 }
 
-const char flagChars[] = "stm";
+const char flagChars[] = "sctm";
 
 static void
 usage(const char *progname)
 {
     fprintf(stderr, "Usage: %s [-%s] videoName\n", progname, flagChars);
-    fprintf(stderr, "\t-s --> Run in 'Statistics Mode'\n");
-    fprintf(stderr, "\t-s --> Run with Texture Memory\n");
-    fprintf(stderr, "\t-s --> Run with Mipmapped Texture Memory\n");
+    fprintf(stderr, "\t-s --> Run in 'Statistics Mode (overrides -c)'\n");
+    fprintf(stderr, "\t-c --> Verify 'Correctness' (overrides -s)\n");
+    fprintf(stderr, "\t-t --> Run with Texture Memory\n");
+    fprintf(stderr, "\t-m --> Run with Mipmapped Texture Memory\n");
     fprintf(stderr, "*NOTE* videoName is the relative path to a file, extension included.\n");
 }
 
@@ -98,6 +99,10 @@ main(int argc, char *argv[])
     // Other misc stuff
     char *progname = argv[0];
 
+    // Correctness external definitions
+    extern uint64 correctFlows;
+    extern uint64 totalFlows;
+
     // Parse all options
     int opt;
     while ((opt = getopt(argc, argv, flagChars)) != -1)
@@ -107,6 +112,12 @@ main(int argc, char *argv[])
         case 's':
             std::cout << "Statistics Mode enabled." << std::endl;
             progFlags.statsMode = true;
+            progFlags.correctness = false;
+            break;
+        case 'c':
+            std::cout << "Correctness Mode enabled." << std::endl;
+            progFlags.correctness = true;
+            progFlags.statsMode = false;
             break;
         case 't':
             progFlags.textureMem = true;
@@ -144,7 +155,6 @@ main(int argc, char *argv[])
     char *fileInputPath = argv[0];
 
     // Reading the videos
-    // TODO - maybe allow the user to specify the full path to the input/output video to support other file formats
     if (!fileAtPathExists(fileInputPath))
     {
         std::cerr << "File at '" << fileInputPath << "' does not exist." << std::endl;
@@ -179,49 +189,67 @@ main(int argc, char *argv[])
         std::filesystem::path sparseGpuOutputPath = returnOutputFilePath(fullFileInputPath, "-SparseGPU");
         std::filesystem::path sparseCpuOutputPath = returnOutputFilePath(fullFileInputPath, "-SparseCPU");
 
-        // CPU Lucas Kanade
-        std::cout << std::endl << "Starting CPU Lucas Kanade..." << std::endl;
-        std::cout << "Frames to Process: " << video.frames.size() << std::endl;
-        startStopwatch();
-        sparseLucasKanadeCPU(video, progFlags.mipMap);
-        stopStopwatch();
-
-        std::cout << std::endl << "Writing CPU Lucas Kanade output to video..." << std::endl;
-        startStopwatch();
-        if (writeVideo(video, sparseCpuOutputPath) != EXIT_SUCCESS)
+        if (!progFlags.correctness)
         {
-            return EXIT_FAILURE;
-        }
-        stopStopwatch();
+            // CPU Lucas Kanade
+            std::cout << std::endl << "Starting CPU Lucas Kanade..." << std::endl;
+            std::cout << "Frames to Process: " << video.frames.size() << std::endl;
+            startStopwatch();
+            totalFlows = correctFlows = 0;
+            sparseLucasKanadeCPU(video, progFlags);
+            stopStopwatch();
 
-        // Super necessary for the sake of preventing excessive memory-hogging
-        video.outputFrames.clear();
+            std::cout << std::endl << "Writing CPU Lucas Kanade output to video..." << std::endl;
+            startStopwatch();
+            if (writeVideo(video, sparseCpuOutputPath) != EXIT_SUCCESS)
+            {
+                return EXIT_FAILURE;
+            }
+            stopStopwatch();
+
+            // Super necessary for the sake of preventing excessive memory-hogging
+            video.outputFrames.clear();
+        }
 
         // GPU Lucas Kanade
         std::cout << std::endl << "Starting GPU Lucas Kanade..." << std::endl;
         std::cout << "Frames to Process: " << video.frames.size() << std::endl;
         startStopwatch();
+        totalFlows = correctFlows = 0;
         if (progFlags.textureMem)
         {
-            sparseLucasKanadeGPUTex(video);
+            sparseLucasKanadeGPUTex(video, progFlags);
         }
         else if (progFlags.mipMap)
         {
-            sparseLucasKanadeGPUMip(video);
+            sparseLucasKanadeGPUMip(video, progFlags);
         }
         else
         {
-            sparseLucasKanadeGPU(video);
+            sparseLucasKanadeGPU(video, progFlags);
         }
         stopStopwatch();
 
-        std::cout << std::endl << "Writing GPU Lucas Kanade output to video..." << std::endl;
-        startStopwatch();
-        if (writeVideo(video, sparseGpuOutputPath) != EXIT_SUCCESS)
+        if (progFlags.correctness)
         {
-            return EXIT_FAILURE;
+            std::cout << std::endl << "Correctness -> Total Correct Flows: " << correctFlows << std::endl;
+            std::cout << "Correctness -> Total Compared Flows: " << totalFlows << std::endl;
+            if (totalFlows > 0)
+            {
+                std::cout << "Correctness -> Percentage: ";
+                printf("%8.4f\n", ((float)correctFlows/totalFlows));
+            }
         }
-        stopStopwatch();
+        else
+        {
+            std::cout << std::endl << "Writing GPU Lucas Kanade output to video..." << std::endl;
+            startStopwatch();
+            if (writeVideo(video, sparseGpuOutputPath) != EXIT_SUCCESS)
+            {
+                return EXIT_FAILURE;
+            }
+            stopStopwatch();
+        }
     }
 
     return EXIT_SUCCESS;

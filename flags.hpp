@@ -6,6 +6,7 @@ struct ProgramFlags
     bool statsMode;
     bool textureMem;
     bool mipMap;
+    bool correctness;
 };
 
 #endif
