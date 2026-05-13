@@ -30,12 +30,7 @@
 #define LK_EPSILON 0.03
 #define LK_ITERATIONS 10
 
-static uint64 correctFlows = 0;
-static uint64 totalFlows = 0;
-
-void compareCPUSingleFlowOnDense(cv::Mat oldFrame, cv::Mat frame, vector<cv::Point2f> oldPoints,
-                                 vector<cv::Point2f> points, vector<uchar> status, ProgramFlags flags);
-void compareGPUSingleFlowOnDense(cv::Mat oldFrame, cv::Mat frame, cv::Vec3f *oldPoints, cv::Vec3f *points,
+void compareGPULucasKanadeFlow(cv::Mat oldFrame, cv::Mat frame, cv::Vec3f *oldPoints, cv::Vec3f *points,
                                  int featureCount, ProgramFlags flags);
 
 void sparseLucasKanadeCPU(VideoInfo &video, ProgramFlags flags);
