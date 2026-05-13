@@ -7,9 +7,9 @@ FORMATTER = clang-format
 BUILD_DIR = build
 FLOW_PROG = optflow
 
-PROCESSING_SRCS = processing/video_io.cpp processing/drawing.cpp
+PROCESSING_SRCS = processing/video_io.cpp processing/drawing.cpp processing/frame_buffer.cpp
 PROCESSING_OBJS = $(addprefix $(BUILD_DIR)/, $(patsubst %.cu,%.o, $(patsubst %.cpp,%.o, $(PROCESSING_SRCS))))
-PROCESSING_HDRS = processing/video_io.hpp processing/drawing.hpp
+PROCESSING_HDRS = processing/video_io.hpp processing/drawing.hpp processing/frame_buffer.hpp
 
 TIMING_SRCS = timing/stopwatch.cpp timing/statistics.cpp
 TIMING_OBJS = $(addprefix $(BUILD_DIR)/, $(patsubst %.cu,%.o, $(patsubst %.cpp,%.o, $(TIMING_SRCS))))

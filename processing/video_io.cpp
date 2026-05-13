@@ -8,21 +8,23 @@
  *
  * @param video the VideoInfo struct to store the initial video's frames.
  * @param video_path the path to the video on the filesystem.
+ * @param usePinnedMemory whether to use pinned memory for the video frames, which can speed up GPU transfers.
  *
  * @return EXIT_SUCCESS or EXIT_FAILURE, depending on the result of the read.
  */
 int
-readVideo(VideoInfo &video, std::filesystem::path video_path)
+readVideo(VideoInfo &video, std::filesystem::path video_path, bool usePinnedMemory)
 {
-    cv::VideoCapture cap(video_path.string());
+    std::unique_ptr<cv::VideoCapture> cap = std::make_unique<cv::VideoCapture>(0);
+    cap->open(video_path.string());
 
-    int totalFrames = cap.get(cv::CAP_PROP_FRAME_COUNT);
-    video.fps = cap.get(cv::CAP_PROP_FPS);
+    int totalFrames = cap->get(cv::CAP_PROP_FRAME_COUNT);
+    video.fps = cap->get(cv::CAP_PROP_FPS);
 
-    if (!cap.isOpened())
+    if (!cap->isOpened())
     {
         std::cout << "Error: Could not open video file." << std::endl;
-        cap.release();
+        cap->release();
         return EXIT_FAILURE;
     }
     else
@@ -32,18 +34,8 @@ readVideo(VideoInfo &video, std::filesystem::path video_path)
         std::cout << "Video FPS: " << video.fps << std::endl;
     }
 
-    cv::Mat frame, gray;
-    video.frames.reserve(totalFrames > 0 ? totalFrames : 100);
-
-    int i = 0;
-    while (cap.read(frame))
-    {
-        cv::cvtColor(frame, gray, cv::COLOR_BGR2GRAY);
-        video.frames.push_back(gray.clone());
-        i++;
-    }
-    cap.release();
-    std::cout << "Buffered " << video.frames.size() << " frames." << std::endl;
+    video.frames.initialize(cap, FRAME_BUFFER_SIZE, usePinnedMemory);
+    std::cout << "Started buffering the source video!" << std::endl;
 
     return EXIT_SUCCESS;
 }
@@ -111,12 +103,12 @@ writeVideo(VideoInfo &video, std::filesystem::path video_path)
 int
 copyVideo(VideoInfo &dstVideo, VideoInfo &srcVideo)
 {
-    dstVideo.fps = srcVideo.fps;
-    dstVideo.width = srcVideo.width;
-    dstVideo.height = srcVideo.height;
-    for (int i = 0; i < srcVideo.frames.size(); i++)
-    {
-        dstVideo.frames.push_back(srcVideo.frames[i].clone());
-    }
+    // dstVideo.fps = srcVideo.fps;
+    // dstVideo.width = srcVideo.width;
+    // dstVideo.height = srcVideo.height;
+    // for (int i = 0; i < srcVideo.frames.size(); i++)
+    // {
+    //     dstVideo.frames.push_back(srcVideo.frames[i].clone());
+    // }
     return EXIT_SUCCESS;
 }

@@ -79,7 +79,7 @@ usage(const char *progname)
     fprintf(stderr, "\t-s --> Run in 'Statistics Mode'\n");
     fprintf(stderr, "\t-t --> Run with Texture Memory\n");
     fprintf(stderr, "\t-m --> Run with Mipmapped Texture Memory\n");
-    fprintf(stderr, "\t-a --> Run with Asynchronous Streamed Memory Loading\n");
+    fprintf(stderr, "\t-a --> Run with Asynchronous Streamed Memory Loading -- only available with Mipmapped Texture Memory\n");
     fprintf(stderr, "*NOTE* videoName is the relative path to a file, extension included.\n");
 }
 
@@ -112,17 +112,13 @@ main(int argc, char *argv[])
         case 't':
             progFlags.textureMem = true;
             progFlags.mipMap = false;
-            progFlags.stream = false;
             break;
         case 'm':
             progFlags.mipMap = true;
             progFlags.textureMem = false;
-            progFlags.stream = false;
             break;
         case 'a':
             progFlags.stream = true;
-            progFlags.mipMap = false;
-            progFlags.textureMem = false;
             break;
         default:
             usage(progname);
@@ -166,7 +162,7 @@ main(int argc, char *argv[])
 
     VideoInfo video;
     startStopwatch();
-    if (readVideo(video, fullFileInputPath) != EXIT_SUCCESS)
+    if (readVideo(video, fullFileInputPath, progFlags.stream) != EXIT_SUCCESS)
     {
         return EX_NOINPUT;
     }
@@ -193,7 +189,7 @@ main(int argc, char *argv[])
 
         // CPU Lucas Kanade
         std::cout << std::endl << "Starting CPU Lucas Kanade..." << std::endl;
-        std::cout << "Frames to Process: " << video.frames.size() << std::endl;
+        // std::cout << "Frames to Process: " << video.frames.size() << std::endl;
         startStopwatch();
         sparseLucasKanadeCPU(video, progFlags.mipMap);
         stopStopwatch();
@@ -211,7 +207,7 @@ main(int argc, char *argv[])
 
         // GPU Lucas Kanade
         std::cout << std::endl << "Starting GPU Lucas Kanade..." << std::endl;
-        std::cout << "Frames to Process: " << video.frames.size() << std::endl;
+        // std::cout << "Frames to Process: " << video.frames.size() << std::endl;
         startStopwatch();
         if (progFlags.textureMem)
         {
@@ -220,10 +216,6 @@ main(int argc, char *argv[])
         else if (progFlags.mipMap)
         {
             sparseLucasKanadeGPUMip(video);
-        }
-        else if (progFlags.stream)
-        {
-            sparseLucasKanadeGPUStream(video);
         }
         else
         {

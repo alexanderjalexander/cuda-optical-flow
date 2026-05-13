@@ -131,10 +131,6 @@ recordStatsSparseLucasKanade(bool onCPU, ProgramFlags progFlags, VideoInfo &vide
             {
                 sparseLucasKanadeGPUMip(video);
             }
-            else if (progFlags.stream)
-            {
-                sparseLucasKanadeGPUStream(video);
-            }
             else
             {
                 sparseLucasKanadeGPU(video);

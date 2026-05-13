@@ -565,18 +565,19 @@ initHarrisGaussianKernelMip(float sigma)
  * @param video the VideoInfo struct storing the initial frame's videos.
  */
 void
-sparseLucasKanadeGPUMip(VideoInfo &video)
+sparseLucasKanadeGPUMip(VideoInfo &video, bool async)
 {
     if (video.frames.empty())
     {
         return;
     }
 
-    int width = video.frames[0].cols;
-    int height = video.frames[0].rows;
+    cv::Mat frame = video.frames.next();
+    int width = frame.cols;
+    int height = frame.rows;
 
     // For coloring the output
-    cv::Mat mask = cv::Mat::zeros(video.frames[0].size(), CV_8UC3);
+    cv::Mat mask = cv::Mat::zeros(frame.size(), CV_8UC3);
 
     // === Pointer Declaration ===
 
@@ -612,12 +613,24 @@ sparseLucasKanadeGPUMip(VideoInfo &video)
     // === MipMap Copying & Level Calculations ===
 
     cudaArray_t level0;
-    cudaGetMipmappedArrayLevel(&level0, deviceFrameMipMap, 0);
-    CUDA_CHECK(cudaMemcpy2DToArray(level0, 0, 0, video.frames[0].data, width * sizeof(u_char), width * sizeof(u_char), height,
-                        cudaMemcpyHostToDevice));
-    cudaGetMipmappedArrayLevel(&level0, devicePrevFrameMipMap, 0);
-    CUDA_CHECK(cudaMemcpy2DToArray(level0, 0, 0, video.frames[0].data, width * sizeof(u_char), width * sizeof(u_char), height,
-                        cudaMemcpyHostToDevice));
+    if (async)
+    {
+        cudaGetMipmappedArrayLevel(&level0, deviceFrameMipMap, 0);
+        CUDA_CHECK(cudaMemcpy2DToArrayAsync(level0, 0, 0, frame.data, width * sizeof(u_char), width * sizeof(u_char), height,
+                            cudaMemcpyHostToDevice));
+                            cudaGetMipmappedArrayLevel(&level0, devicePrevFrameMipMap, 0);
+        CUDA_CHECK(cudaMemcpy2DToArrayAsync(level0, 0, 0, frame.data, width * sizeof(u_char), width * sizeof(u_char), height,
+        cudaMemcpyHostToDevice));
+    }
+    else
+    {
+        cudaGetMipmappedArrayLevel(&level0, deviceFrameMipMap, 0);
+        CUDA_CHECK(cudaMemcpy2DToArray(level0, 0, 0, frame.data, width * sizeof(u_char), width * sizeof(u_char), height,
+                            cudaMemcpyHostToDevice));
+        cudaGetMipmappedArrayLevel(&level0, devicePrevFrameMipMap, 0);
+        CUDA_CHECK(cudaMemcpy2DToArray(level0, 0, 0, frame.data, width * sizeof(u_char), width * sizeof(u_char), height,
+                            cudaMemcpyHostToDevice));
+    }
 
     generateMipMaps(&devicePrevFrameMipMap, &extent, levels);
     generateMipMaps(&deviceFrameMipMap, &extent, levels);
@@ -688,7 +701,7 @@ sparseLucasKanadeGPUMip(VideoInfo &video)
 
     // == Repeated Frame LK Procedure ==
 
-    for (int i = 1; i < video.frames.size(); i++)
+    while (!(frame = video.frames.next()).empty())
     {
         // Switch Frames using pointer swapping
         std::swap(deviceFrameMipMap, devicePrevFrameMipMap);
@@ -697,8 +710,16 @@ sparseLucasKanadeGPUMip(VideoInfo &video)
         // Remake the texture objects again.
         cudaArray_t level0;
         cudaGetMipmappedArrayLevel(&level0, deviceFrameMipMap, 0);
-        cudaMemcpy2DToArray(level0, 0, 0, video.frames[i].data, width * sizeof(u_char), width * sizeof(u_char), height,
-                            cudaMemcpyHostToDevice);
+        if (async)
+        {
+            cudaMemcpy2DToArrayAsync(level0, 0, 0, frame.data, width * sizeof(u_char), width * sizeof(u_char), height,
+                                     cudaMemcpyHostToDevice);
+        }
+        else
+        {
+            cudaMemcpy2DToArray(level0, 0, 0, frame.data, width * sizeof(u_char), width * sizeof(u_char), height,
+                                cudaMemcpyHostToDevice);
+        }
 
         generateMipMaps(&deviceFrameMipMap, &extent, levels);
 
@@ -714,7 +735,7 @@ sparseLucasKanadeGPUMip(VideoInfo &video)
         cudaMemcpy(frameFeatures, deviceFrameFeatures, featureCount * sizeof(float3), cudaMemcpyDeviceToHost);
 
         cv::Mat output;
-        cvtColor(video.frames[i], output, cv::COLOR_GRAY2BGR);
+        cvtColor(frame, output, cv::COLOR_GRAY2BGR);
         drawSparseOpticalFlowGPU(output, mask, reinterpret_cast<cv::Vec3f *>(prevFrameFeatures),
                                  reinterpret_cast<cv::Vec3f *>(frameFeatures), featureCount, pt_colors,
                                  DRAW_CONTINUOUS_LINES);

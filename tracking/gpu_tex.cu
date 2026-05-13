@@ -463,11 +463,12 @@ sparseLucasKanadeGPUTex(VideoInfo &video)
         return;
     }
 
-    int width = video.frames[0].cols;
-    int height = video.frames[0].rows;
+    cv::Mat frame = video.frames.next();
+    int width = frame.cols;
+    int height = frame.rows;
 
     // For coloring the output
-    cv::Mat mask = cv::Mat::zeros(video.frames[0].size(), CV_8UC3);
+    cv::Mat mask = cv::Mat::zeros(frame.size(), CV_8UC3);
 
     // === Pointer Declaration ===
 
@@ -493,8 +494,8 @@ sparseLucasKanadeGPUTex(VideoInfo &video)
 
     // === Pointer Memory Copying & Zeroing ===
 
-    cudaMemcpy2DToArray(frameArray, 0, 0, video.frames[0].data, width * sizeof(u_char), width * sizeof(u_char), height, cudaMemcpyHostToDevice);
-    cudaMemcpy2DToArray(prevFrameArray, 0, 0, video.frames[0].data, width * sizeof(u_char), width * sizeof(u_char), height, cudaMemcpyHostToDevice);
+    cudaMemcpy2DToArray(frameArray, 0, 0, frame.data, width * sizeof(u_char), width * sizeof(u_char), height, cudaMemcpyHostToDevice);
+    cudaMemcpy2DToArray(prevFrameArray, 0, 0, frame.data, width * sizeof(u_char), width * sizeof(u_char), height, cudaMemcpyHostToDevice);
 
     cudaMemset(deviceFrameFeatures, 0, MAX_FEATURES * sizeof(float3));
     cudaMemset(deviceFrameFeatureCount, 0, sizeof(int));
@@ -563,14 +564,14 @@ sparseLucasKanadeGPUTex(VideoInfo &video)
 
     // == Repeated Frame LK Procedure ==
 
-    for (int i = 1; i < video.frames.size(); i++)
+    while (!(frame = video.frames.next()).empty())
     {
         // Switch Frames using pointer swapping
         std::swap(frameArray, prevFrameArray);
         std::swap(frameTex, prevFrameTex);
 
         // Remake the texture objects again.
-        cudaMemcpy2DToArray(frameArray, 0, 0, video.frames[i].data, width * sizeof(u_char), width * sizeof(u_char), height, cudaMemcpyHostToDevice);
+        cudaMemcpy2DToArray(frameArray, 0, 0, frame.data, width * sizeof(u_char), width * sizeof(u_char), height, cudaMemcpyHostToDevice);
 
         cudaDestroyTextureObject(frameTex);
 
@@ -585,7 +586,7 @@ sparseLucasKanadeGPUTex(VideoInfo &video)
         cudaMemcpy(frameFeatures, deviceFrameFeatures, featureCount * sizeof(float3), cudaMemcpyDeviceToHost);
 
         cv::Mat output;
-        cvtColor(video.frames[i], output, cv::COLOR_GRAY2BGR);
+        cvtColor(frame, output, cv::COLOR_GRAY2BGR);
         drawSparseOpticalFlowGPU(output, mask, reinterpret_cast<cv::Vec3f *>(prevFrameFeatures),
                                  reinterpret_cast<cv::Vec3f *>(frameFeatures), featureCount, pt_colors,
                                  DRAW_CONTINUOUS_LINES);
