@@ -5,6 +5,7 @@
 
 #include "gpu_utilities.cuh"
 #include "lucasKanade.hpp"
+#include "opencv2/core/cuda_types.hpp"
 
 #include <stdio.h>
 
@@ -23,7 +24,7 @@ __constant__ float harrisGaussianKernel[(2 * HARRIS_MASK_RAD + 1)][(2 * HARRIS_M
  * @returns A floating point value representing the interpolated intensity.
  */
 __device__ float
-bilinearInterpolate(unsigned char *img, float x, float y, int width, int height)
+bilinearInterpolate(cv::cuda::PtrStepSz<unsigned char> img, float x, float y, int width, int height)
 {
     int x1 = (int)floor(x);
     int x2 = (int)ceil(x);
@@ -35,10 +36,10 @@ bilinearInterpolate(unsigned char *img, float x, float y, int width, int height)
     y1 = max(0, min(y1, height - 1));
     y2 = max(0, min(y2, height - 1));
 
-    float q11 = (float)img[x1 + (y1 * width)];
-    float q12 = (float)img[x1 + (y2 * width)];
-    float q21 = (float)img[x2 + (y1 * width)];
-    float q22 = (float)img[x2 + (y2 * width)];
+    float q11 = (float)img(y1, x1);
+    float q12 = (float)img(y2, x1);
+    float q21 = (float)img(y1, x2);
+    float q22 = (float)img(y2, x2);
 
     float dx = x - float(x1);
     float dy = y - float(y1);
@@ -55,7 +56,7 @@ bilinearInterpolate(unsigned char *img, float x, float y, int width, int height)
  * @param height The image's height.
  */
 __global__ void
-harrisResponse(float *response, unsigned char *frame, int width, int height)
+harrisResponse(float *response, cv::cuda::PtrStepSz<unsigned char> frame, int width, int height)
 {
     // constant definitions for my own sanity
     const int TOTAL_HALO = HARRIS_MASK_RAD + SOBEL_MASK_RAD;
@@ -71,7 +72,7 @@ harrisResponse(float *response, unsigned char *frame, int width, int height)
     __shared__ float iyShared[BLOCK_SIZE + (2 * HARRIS_MASK_RAD)][BLOCK_SIZE + (2 * HARRIS_MASK_RAD)];
 
     // collaboratively load the horizontal and vertical derivatives into shared memory, including halos
-    load2dSharedMemoryWithHalo<unsigned char>((unsigned char *)frameShared, frame, TOTAL_HALO, width, height);
+    load2dSharedMemoryWithHaloGpuMat<unsigned char>((unsigned char *)frameShared, frame, TOTAL_HALO, width, height);
     __syncthreads();
 
     // on the fly derivative calculations
@@ -232,7 +233,7 @@ harrisThresholder(float3 *features, int *featureCount, float *response, float th
  * @param height The image's height.
  */
 __global__ void
-iterLucasKanadeSolver(unsigned char *frame, unsigned char *prevFrame, float3 *features, int *featureCount, int width,
+iterLucasKanadeSolver(cv::cuda::PtrStepSz<unsigned char> frame, cv::cuda::PtrStepSz<unsigned char> prevFrame, float3 *features, int *featureCount, int width,
                       int height)
 {
     // usual per-thread registers/variables
@@ -277,8 +278,8 @@ iterLucasKanadeSolver(unsigned char *frame, unsigned char *prevFrame, float3 *fe
     int pixelX = fx + tx - LK_WINDOW_WIDTH_HALF;
     int pixelY = fy + ty - LK_WINDOW_WIDTH_HALF;
 
-    // get the halos into shared memory, including halos
-    load2dSharedMemoryCore<unsigned char>((unsigned char *)prevFrameShared, prevFrame, SOBEL_MASK_RAD, width, height,
+    // load the data centered around the feature into shared memory, including halos
+    load2dSharedMemoryCoreGpuMat<unsigned char>((unsigned char *)prevFrameShared, prevFrame, SOBEL_MASK_RAD, width, height,
                                           LK_WINDOW_WIDTH, tx, ty, pixelX, pixelY);
     __syncthreads();
 
@@ -483,21 +484,24 @@ sparseLucasKanadeGPU(VideoInfo &video)
         return;
     }
 
-    cv::Mat frame = video.frames.next();
-    int width = frame.cols;
-    int height = frame.rows;
+    std::pair<cv::cuda::GpuMat, cv::Mat> framePair = video.frames.next();
+    cv::Mat cpuFrame = framePair.second;
+    int width = cpuFrame.cols;
+    int height = cpuFrame.rows;
     int size = width * height * sizeof(unsigned char);
 
     // For coloring the output
-    cv::Mat mask = cv::Mat::zeros(frame.size(), CV_8UC3);
+    cv::Mat mask = cv::Mat::zeros(cpuFrame.size(), CV_8UC3);
 
     // === Pointer Declaration ===
 
     initSobelGaussianKernel(SOBEL_MASK_RAD / 3.0f);
     initHarrisGaussianKernel(HARRIS_MASK_RAD / 3.0f);
 
-    unsigned char *deviceFrame = NULL;
-    unsigned char *devicePrevFrame = NULL;
+    // unsigned char *deviceFrame = NULL;
+    // unsigned char *devicePrevFrame = NULL;
+    cv::cuda::GpuMat deviceFrame = framePair.first;
+    cv::cuda::GpuMat devicePrevFrame;
 
     float3 *deviceFrameFeatures = NULL;
     int *deviceFrameFeatureCount = NULL;
@@ -506,8 +510,8 @@ sparseLucasKanadeGPU(VideoInfo &video)
     // === Pointer Memory Allocation ===
 
     // TODO: Error check???
-    cudaMalloc(&deviceFrame, width * height * sizeof(unsigned char));
-    cudaMalloc(&devicePrevFrame, width * height * sizeof(unsigned char));
+    // cudaMalloc(&deviceFrame, width * height * sizeof(unsigned char));
+    // cudaMalloc(&devicePrevFrame, width * height * sizeof(unsigned char));
 
     cudaMalloc(&deviceFrameFeatures, MAX_FEATURES * sizeof(float3));
     cudaMalloc(&deviceFrameFeatureCount, sizeof(int));
@@ -515,8 +519,8 @@ sparseLucasKanadeGPU(VideoInfo &video)
 
     // === Pointer Memory Copying & Zeroing ===
 
-    cudaMemcpy(deviceFrame, frame.data, size, cudaMemcpyHostToDevice);
-    cudaMemcpy(devicePrevFrame, frame.data, size, cudaMemcpyHostToDevice);
+    // cudaMemcpy(deviceFrame, frame.data, size, cudaMemcpyHostToDevice);
+    // cudaMemcpy(devicePrevFrame, frame.data, size, cudaMemcpyHostToDevice);
 
     cudaMemset(deviceFrameFeatures, 0, MAX_FEATURES * sizeof(float3));
     cudaMemset(deviceFrameFeatureCount, 0, sizeof(int));
@@ -567,13 +571,19 @@ sparseLucasKanadeGPU(VideoInfo &video)
 
     // == Repeated Frame LK Procedure ==
 
-    while (!(frame = video.frames.next()).empty())
+    while (true)
     {
+        framePair = video.frames.next();
+        deviceFrame = framePair.first;
+        cpuFrame = framePair.second;
+        if (cpuFrame.empty()) break;
+
         // Switch Frames using pointer swapping
-        unsigned char *temp = devicePrevFrame;
-        devicePrevFrame = deviceFrame;
-        deviceFrame = temp;
-        cudaMemcpy(deviceFrame, frame.data, size, cudaMemcpyHostToDevice);
+        // unsigned char *temp = devicePrevFrame;
+        // devicePrevFrame = deviceFrame;
+        // deviceFrame = temp;
+        deviceFrame.swap(devicePrevFrame);
+        // cudaMemcpy(deviceFrame, frame.data, size, cudaMemcpyHostToDevice);
 
         // Obtain Lucas Kanade Solve on 1 dimensional grid/block array
         iterLucasKanadeSolver<<<featureGridDim, featureBlockDim>>>(deviceFrame, devicePrevFrame, deviceFrameFeatures,
@@ -585,7 +595,7 @@ sparseLucasKanadeGPU(VideoInfo &video)
         cudaMemcpy(frameFeatures, deviceFrameFeatures, featureCount * sizeof(float3), cudaMemcpyDeviceToHost);
 
         cv::Mat output;
-        cvtColor(frame, output, cv::COLOR_GRAY2BGR);
+        cvtColor(cpuFrame, output, cv::COLOR_GRAY2BGR); // todo (maxgreen01) could probably be done on GPU too
         drawSparseOpticalFlowGPU(output, mask, reinterpret_cast<cv::Vec3f *>(prevFrameFeatures),
                                  reinterpret_cast<cv::Vec3f *>(frameFeatures), featureCount, pt_colors,
                                  DRAW_CONTINUOUS_LINES);
@@ -614,8 +624,8 @@ sparseLucasKanadeGPU(VideoInfo &video)
     free(prevFrameFeatures);
     free(frameFeatures);
 
-    cudaFree(deviceFrame);
-    cudaFree(devicePrevFrame);
+    // cudaFree(deviceFrame);
+    // cudaFree(devicePrevFrame);
 
     cudaFree(deviceFrameFeatures);
     cudaFree(deviceFrameFeatureCount);

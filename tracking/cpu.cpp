@@ -26,7 +26,7 @@ sparseLucasKanadeCPU(VideoInfo &video, bool pyramidal)
         return;
     }
 
-    Mat old_frame = video.frames.next();
+    Mat old_frame = video.frames.next(true).second;
     Mat mask = Mat::zeros(old_frame.size(), CV_8UC3);
     RNG rng;
 
@@ -41,7 +41,7 @@ sparseLucasKanadeCPU(VideoInfo &video, bool pyramidal)
     vector<Scalar> pt_colors = getRandomColors(initialFeatures);
 
     Mat frame;
-    while (!(frame = video.frames.next()).empty())
+    while (!(frame = video.frames.next(true).second).empty())
     {
         Mat output;
         cvtColor(frame, output, COLOR_GRAY2BGR);
@@ -124,7 +124,7 @@ denseLucasKanadeCPU(VideoInfo &video)
         return;
     }
 
-    Mat old_frame = video.frames.next();
+    Mat old_frame = video.frames.next(true).second;
     Mat mask = Mat::zeros(old_frame.size(), CV_8UC3);
     RNG rng;
 
@@ -148,10 +148,10 @@ denseLucasKanadeCPU(VideoInfo &video)
 
     vector<Scalar> pt_colors = getRandomColors(initialFeatures);
 
-    cv::Mat frame;
-    while (!(frame = video.frames.next()).empty())
+    Mat frame;
+    while (!(frame = video.frames.next(true).second).empty())
     {
-        cv::Mat output = cv::Mat::zeros(video.width, video.height, CV_8UC3);
+        Mat output = Mat::zeros(video.width, video.height, CV_8UC3);
 
         // cvtColor(frame, output, COLOR_GRAY2BGR);
 

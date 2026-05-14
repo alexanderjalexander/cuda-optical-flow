@@ -5,7 +5,6 @@
 
 #include <filesystem>
 #include <vector>
-#include <memory>
 
 #include "frame_buffer.hpp"
 #define FRAME_BUFFER_SIZE 10
