@@ -13,7 +13,7 @@ int FrameBuffer::initialize(std::unique_ptr<cv::VideoCapture> &source, size_t _c
         std::cerr << "Error: FrameBuffer capacity must be greater than zero!" << std::endl;
         return EXIT_FAILURE;
     }
-    
+
     this->capacity = _capacity;
     this->size = 0;
     this->front = 0;
@@ -100,16 +100,19 @@ int FrameBuffer::loadFrame()
     // copy the data to the GPU if there are any frames remaining
     if (this->source->read(frame) && !frame.empty())
     {
+        cv::Mat gray;
+        cv::cvtColor(frame, gray, cv::COLOR_BGR2GRAY);
+
         // transfer frame to GPU memory
         if (useStreams)
         {
-            frames[back].upload(frame, stream); // transfer frame to GPU asynchronously
+            frames[back].upload(gray, stream); // transfer frame to GPU asynchronously
         }
         else
         {
-            frames[back].upload(frame); // transfer frame to GPU synchronously
+            frames[back].upload(gray); // transfer frame to GPU synchronously
         }
-        cpuFrames[back] = frame; // keep a copy of the original frame on the CPU as well
+        cpuFrames[back] = gray; // keep a copy of the original frame on the CPU as well
         back = (back + 1) % capacity;
         size++;
     }
@@ -129,7 +132,7 @@ int FrameBuffer::release()
     {
         source->release();
     }
-    
+
     this->capacity = 0;
     this->size = 0;
     this->front = 0;

@@ -205,6 +205,11 @@ main(int argc, char *argv[])
         // Super necessary for the sake of preventing excessive memory-hogging
         video.outputFrames.clear();
 
+        if (readVideo(video, fullFileInputPath, progFlags.stream) != EXIT_SUCCESS)
+        {
+            return EX_NOINPUT;
+        }
+
         // GPU Lucas Kanade
         std::cout << std::endl << "Starting GPU Lucas Kanade..." << std::endl;
         // std::cout << "Frames to Process: " << video.frames.size() << std::endl;

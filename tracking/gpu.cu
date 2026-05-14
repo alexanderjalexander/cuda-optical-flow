@@ -112,7 +112,7 @@ harrisResponse(float *response, cv::cuda::PtrStepSz<unsigned char> frame, int wi
     __syncthreads();
 
     // don't compute for the outermost layers of pixels
-    if (x <= TOTAL_HALO || y <= TOTAL_HALO || x >= width - TOTAL_HALO || y >= height - TOTAL_HALO)
+    if (x < TOTAL_HALO || y < TOTAL_HALO || x >= width - TOTAL_HALO || y >= height - TOTAL_HALO)
     {
         return;
     }
@@ -255,8 +255,8 @@ iterLucasKanadeSolver(cv::cuda::PtrStepSz<unsigned char> frame, cv::cuda::PtrSte
     {
         return;
     }
-    int fx = (int)feature.x;
-    int fy = (int)feature.y;
+    int fx = (int)roundf(feature.x);
+    int fy = (int)roundf(feature.y);
 
     // define multiple shared memory blocks large enough to hold the internal values and the halos
     __shared__ float ixShared[LK_WINDOW_WIDTH][LK_WINDOW_WIDTH];
@@ -574,7 +574,6 @@ sparseLucasKanadeGPU(VideoInfo &video)
     while (true)
     {
         framePair = video.frames.next();
-        deviceFrame = framePair.first;
         cpuFrame = framePair.second;
         if (cpuFrame.empty()) break;
 
@@ -583,6 +582,7 @@ sparseLucasKanadeGPU(VideoInfo &video)
         // devicePrevFrame = deviceFrame;
         // deviceFrame = temp;
         deviceFrame.swap(devicePrevFrame);
+        deviceFrame = framePair.first;
         // cudaMemcpy(deviceFrame, frame.data, size, cudaMemcpyHostToDevice);
 
         // Obtain Lucas Kanade Solve on 1 dimensional grid/block array

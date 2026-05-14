@@ -201,7 +201,7 @@ load2dSharedMemoryWithHalo1dBlock(T *shared, T *global, int tileSize, int halo_r
 
 //
 // ===================================
-//           GpuMat Versions          
+//           GpuMat Versions
 // ===================================
 //
 
@@ -338,8 +338,8 @@ load2dSharedMemoryWithHaloGpuMat(T *shared, cv::cuda::PtrStepSz<T> global, int h
     int xGlobal = tx + blockIdx.x * blockDim.x;
     int yGlobal = ty + blockIdx.y * blockDim.y;
 
-    load2dSharedMemoryCore<T>(shared, global, halo_radius, widthGlobal, heightGlobal, blockDim.x, tx, ty, xGlobal,
-                              yGlobal);
+    load2dSharedMemoryCoreGpuMat<T>(shared, global, halo_radius, widthGlobal, heightGlobal, blockDim.x, tx, ty, xGlobal,
+                                    yGlobal);
 }
 
 
