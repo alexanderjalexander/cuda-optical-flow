@@ -116,6 +116,7 @@ recordStatsSparseLucasKanade(bool onCPU, ProgramFlags progFlags, VideoInfo &vide
 
     for (int i = 0; i < STATISTICS_ITERATIONS; i++)
     {
+        video.frames.resetCapture();
         auto startTime = high_resolution_clock::now();
         if (onCPU)
         {

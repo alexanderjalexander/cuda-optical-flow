@@ -16,7 +16,7 @@ class FrameBuffer
 {
     private:
         cv::cuda::GpuMat *frames; // circular buffer of frames, allocated either in pinned or pageable memory
-        cv::Mat *cpuFrames; // corresponding CPU frames 
+        cv::Mat *cpuFrames; // corresponding CPU frames
 
         size_t capacity; // total number of frames that can be stored in the buffer at once
         size_t size; // current number of frames in the buffer
@@ -36,6 +36,8 @@ class FrameBuffer
         bool full() const;
         std::pair<cv::cuda::GpuMat, cv::Mat> next(bool ignoreGpu = false, bool ignoreCpu = false);
         int release();
+        void syncStream() { stream.waitForCompletion(); }
+        void resetCapture();
 };
 
 #endif

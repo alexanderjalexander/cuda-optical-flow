@@ -539,6 +539,7 @@ sparseLucasKanadeGPU(VideoInfo &video)
 
     // == Initial Harris Response ==
 
+    // video.frames.syncStream();
     harrisResponse<<<gridDim, blockDim>>>(deviceResponse, deviceFrame, width, height);
     cudaDeviceSynchronize();
 
@@ -581,6 +582,7 @@ sparseLucasKanadeGPU(VideoInfo &video)
         // unsigned char *temp = devicePrevFrame;
         // devicePrevFrame = deviceFrame;
         // deviceFrame = temp;
+        // video.frames.syncStream();
         deviceFrame.swap(devicePrevFrame);
         deviceFrame = framePair.first;
         // cudaMemcpy(deviceFrame, frame.data, size, cudaMemcpyHostToDevice);

@@ -6,6 +6,9 @@
 #include <iostream>
 #include <utility>
 
+// Start at 1, so that we don't accidentally overwrite data being processed on the GPU.
+#define FRONT_START 1
+
 int FrameBuffer::initialize(std::unique_ptr<cv::VideoCapture> &source, size_t _capacity, bool _useStreams)
 {
     if (_capacity == 0)
@@ -16,7 +19,7 @@ int FrameBuffer::initialize(std::unique_ptr<cv::VideoCapture> &source, size_t _c
 
     this->capacity = _capacity;
     this->size = 0;
-    this->front = 0;
+    this->front = FRONT_START;
     this->back = 0;
     this->useStreams = _useStreams;
     this->frames = new cv::cuda::GpuMat[capacity]();
@@ -33,11 +36,15 @@ int FrameBuffer::initialize(std::unique_ptr<cv::VideoCapture> &source, size_t _c
     // and simultaneously fill initial frames with data
     for (size_t i = 0; i < _capacity; ++i)
     {
-        frames[i] = cv::cuda::GpuMat();
-        if (loadFrame() != EXIT_SUCCESS)
+        // printf("Loading frame %d...\n", i);
+        frames[i % capacity] = cv::cuda::GpuMat();
+        if (i < (capacity - FRONT_START))
         {
-            std::cerr << "Error: Failed to load frame " << i << " into FrameBuffer!" << std::endl;
-            return EXIT_FAILURE;
+            if (loadFrame() != EXIT_SUCCESS)
+            {
+                std::cerr << "Error: Failed to load frame " << i << " into FrameBuffer!" << std::endl;
+                return EXIT_FAILURE;
+            }
         }
     }
 
@@ -65,10 +72,17 @@ std::pair<cv::cuda::GpuMat, cv::Mat> FrameBuffer::next(bool ignoreGpu, bool igno
         return std::make_pair(cv::cuda::GpuMat(), cv::Mat()); // return empty pair
     }
 
+    // Ensure the front frame is fully uploaded before we hand it out
+    if (useStreams)
+    {
+        stream.waitForCompletion();
+    }
+
     // return the front frame
     cv::cuda::GpuMat gpuFrame = ignoreGpu ? cv::cuda::GpuMat() : frames[front];
     cv::Mat cpuFrame = ignoreCpu ? cv::Mat() : cpuFrames[front];
     front = (front + 1) % capacity;
+    // printf("Front updated to = %d\n", front);
     size--;
 
     // add a new frame to the back of the frame
@@ -106,10 +120,12 @@ int FrameBuffer::loadFrame()
         // transfer frame to GPU memory
         if (useStreams)
         {
+            // printf("Back = %d\n", back);
             frames[back].upload(gray, stream); // transfer frame to GPU asynchronously
         }
         else
         {
+            // printf("Back = %d\n", back);
             frames[back].upload(gray); // transfer frame to GPU synchronously
         }
         cpuFrames[back] = gray; // keep a copy of the original frame on the CPU as well
@@ -138,4 +154,30 @@ int FrameBuffer::release()
     this->front = 0;
     this->back = 0;
     return EXIT_SUCCESS;
+}
+
+void FrameBuffer::resetCapture()
+{
+    if (source && source->isOpened())
+    {
+        source->set(cv::CAP_PROP_POS_FRAMES, 0);
+        this->front = FRONT_START;
+        this->back = 0;
+        this->size = 0;
+
+        // refill the buffer like initialize() does
+        for (size_t i = 0; i < capacity - FRONT_START; ++i)
+        {
+            if (loadFrame() != EXIT_SUCCESS)
+            {
+                std::cerr << "Error: Failed to refill FrameBuffer during reset!" << std::endl;
+                return;
+            }
+        }
+
+        if (useStreams)
+        {
+            stream.waitForCompletion();
+        }
+    }
 }
