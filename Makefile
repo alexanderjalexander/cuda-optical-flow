@@ -1,6 +1,6 @@
 CC = nvcc
 FLAGS = -arch=sm_75 -std=c++17 -diag-suppress 611 -MMD -MP
-IFLAGS = -I/usr/include/opencv4
+IFLAGS = -I/usr/local/include/opencv4
 LDFLAGS = -lopencv_core -lopencv_highgui -lopencv_videoio -lopencv_video -lopencv_imgcodecs -lopencv_imgproc
 
 FORMATTER = clang-format
