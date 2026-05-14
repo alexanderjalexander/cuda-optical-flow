@@ -125,11 +125,11 @@ recordStatsSparseLucasKanade(bool onCPU, ProgramFlags progFlags, VideoInfo &vide
         {
             if (progFlags.textureMem)
             {
-                sparseLucasKanadeGPUTex(video);
+                // sparseLucasKanadeGPUTex(video);
             }
             else if (progFlags.mipMap)
             {
-                sparseLucasKanadeGPUMip(video);
+                // sparseLucasKanadeGPUMip(video);
             }
             else
             {
