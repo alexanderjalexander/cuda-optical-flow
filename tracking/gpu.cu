@@ -378,7 +378,7 @@ iterLucasKanadeSolver(cv::cuda::PtrStepSz<unsigned char> frame, cv::cuda::PtrSte
         __syncthreads();
 
         // Convergence check
-        if (du * du + dv * dv < LK_EPSILON)
+        if (du * du + dv * dv < LK_EPSILON * LK_EPSILON)
         {
             break;
         }
@@ -392,7 +392,7 @@ iterLucasKanadeSolver(cv::cuda::PtrStepSz<unsigned char> frame, cv::cuda::PtrSte
         float updatedY = (feature.y + v);
         float status = feature.z;
 
-        if (updatedX < 0 || updatedX >= width || updatedY < 0 || updatedY >= height)
+        if (updatedX < 1 || updatedX > width - 2 || updatedY < 1 || updatedY > height - 2)
         {
             status = 0;
         }
@@ -477,7 +477,7 @@ initHarrisGaussianKernel(float sigma)
  * @param video the VideoInfo struct storing the initial frame's videos.
  */
 void
-sparseLucasKanadeGPU(VideoInfo &video)
+sparseLucasKanadeGPU(VideoInfo &video, ProgramFlags flags)
 {
     if (video.frames.empty())
     {
@@ -486,9 +486,9 @@ sparseLucasKanadeGPU(VideoInfo &video)
 
     std::pair<cv::cuda::GpuMat, cv::Mat> framePair = video.frames.next();
     cv::Mat cpuFrame = framePair.second;
+    cv::Mat cpuPrevFrame = framePair.second;
     int width = cpuFrame.cols;
     int height = cpuFrame.rows;
-    int size = width * height * sizeof(unsigned char);
 
     // For coloring the output
     cv::Mat mask = cv::Mat::zeros(cpuFrame.size(), CV_8UC3);
@@ -575,6 +575,7 @@ sparseLucasKanadeGPU(VideoInfo &video)
     while (true)
     {
         framePair = video.frames.next();
+        std::swap(cpuPrevFrame, cpuFrame);
         cpuFrame = framePair.second;
         if (cpuFrame.empty()) break;
 
@@ -596,14 +597,22 @@ sparseLucasKanadeGPU(VideoInfo &video)
         // But then we still need to copy the output frame... argh...
         cudaMemcpy(frameFeatures, deviceFrameFeatures, featureCount * sizeof(float3), cudaMemcpyDeviceToHost);
 
-        cv::Mat output;
-        cvtColor(cpuFrame, output, cv::COLOR_GRAY2BGR); // todo (maxgreen01) could probably be done on GPU too
-        drawSparseOpticalFlowGPU(output, mask, reinterpret_cast<cv::Vec3f *>(prevFrameFeatures),
-                                 reinterpret_cast<cv::Vec3f *>(frameFeatures), featureCount, pt_colors,
-                                 DRAW_CONTINUOUS_LINES);
+        if (flags.correctness)
+        {
+            compareGPULucasKanadeFlow(cpuPrevFrame, cpuFrame, reinterpret_cast<cv::Vec3f *>(prevFrameFeatures),
+                                    reinterpret_cast<cv::Vec3f *>(frameFeatures), featureCount, flags);
+        }
+        else
+        {
+            cv::Mat output;
+            cvtColor(cpuFrame, output, cv::COLOR_GRAY2BGR); // todo (maxgreen01) could probably be done on GPU too
+            drawSparseOpticalFlowGPU(output, mask, reinterpret_cast<cv::Vec3f *>(prevFrameFeatures),
+                                    reinterpret_cast<cv::Vec3f *>(frameFeatures), featureCount, pt_colors,
+                                    DRAW_CONTINUOUS_LINES);
+            video.outputFrames.push_back(output);
+        }
 
         std::memcpy(prevFrameFeatures, frameFeatures, featureCount * sizeof(float3));
-        video.outputFrames.push_back(output);
 
         /**
          * Algorithmic Considerations

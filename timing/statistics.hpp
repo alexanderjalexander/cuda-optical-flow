@@ -1,8 +1,8 @@
 #ifndef STATISTICS_H
 #define STATISTICS_H
 
-#include "../processing/video_io.hpp"
 #include "../flags.hpp"
+#include "../processing/video_io.hpp"
 
 #include <chrono>
 #include <vector>

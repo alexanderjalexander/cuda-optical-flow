@@ -7,6 +7,7 @@ struct ProgramFlags
     bool textureMem;
     bool mipMap;
     bool stream;
+    bool correctness;
 };
 
 #endif
