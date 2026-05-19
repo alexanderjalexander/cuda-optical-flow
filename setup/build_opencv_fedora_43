@@ -1,0 +1,201 @@
+#!/usr/bin/env bash
+
+# If any of these invocations return a non-zero exit code
+# OR if you expand an unset variable, stop.
+set -ue
+
+# Glob expansions (.../*) that match to nothing expand to nothing.
+shopt -s nullglob
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+rm -rf "${SCRIPT_DIR}/opencv"
+rm -rf "${SCRIPT_DIR}/opencv_contrib"
+rm -rf "${SCRIPT_DIR}/opencv_build"
+mkdir -p "${SCRIPT_DIR}/opencv_build"
+
+# == Helpers ===================================================================
+log()  { echo ">>> $*"; }
+die()  { echo "ERROR: $*" >&2; exit 1; }
+
+FEDORA_VER="$(rpm -E '%fedora')"
+log "Detected Fedora ${FEDORA_VER}"
+if ! [[ "${FEDORA_VER}" -eq "43" ]]; then
+    die "Unsupported Fedora version: ${FEDORA_VER} (script requires Fedora 43)"
+fi
+
+# == 0. Cloning OpenCV & OpenCV Contrib ========================================
+if ! git clone https://github.com/opencv/opencv.git; then
+    die "Could not clone OpenCV repository."
+fi
+
+if ! git clone https://github.com/opencv/opencv_contrib.git; then
+    die "Could not clone OpenCV-Contrib repository."
+fi
+
+# == 1. CUDA repository ========================================================
+# NOTE: NVIDIA publishes a native Fedora 43 CUDA repo - no version fallback
+# needed. Confirmed present at:
+#   https://developer.download.nvidia.com/compute/cuda/repos/fedora43/x86_64/
+if ! dnf repolist enabled 2>/dev/null | grep -qi "cuda"; then
+    log "Adding NVIDIA CUDA repository for Fedora ${FEDORA_VER}..."
+
+    sudo dnf config-manager addrepo --from-repofile "https://developer.download.nvidia.com/compute/cuda/repos/fedora${FEDORA_VER}/x86_64/cuda-fedora${FEDORA_VER}.repo"
+    sudo dnf clean all
+    sudo dnf makecache || die "dnf makecache failed after adding CUDA repo"
+else
+    log "CUDA repository already present, skipping."
+fi
+
+# == 2. RPM Fusion Free (provides ffmpeg and its -devel packages) ==============
+if ! dnf repolist enabled 2>/dev/null | grep -qi "rpmfusion-free"; then
+    log "Adding RPM Fusion Free repository..."
+    sudo dnf install -y \
+        "https://download1.rpmfusion.org/free/fedora/rpmfusion-free-release-${FEDORA_VER}.noarch.rpm"
+else
+    log "RPM Fusion Free already present, skipping."
+fi
+
+# == 3. Install build dependencies ============================================
+# Fedora package equivalents:
+#   python3-dev          -> python3-devel
+#   build-essential      -> gcc-c++ make
+#   libgtk-3-dev         -> gtk3-devel
+#   libpng-dev           -> libpng-devel
+#   libjpeg-dev          -> libjpeg-turbo-devel
+#   libavcodec/format/
+#     util/swscale/
+#     device-dev         -> ffmpeg-devel  (single package on Fedora/RPM Fusion)
+#
+# NVENC / NVDEC headers (nvcuvid.h, nvEncodeAPI.h) ship inside the CUDA
+# toolkit under /usr/local/cuda/include/ - pulled in by cuda-toolkit below.
+log "Installing dependencies..."
+sudo dnf install -y \
+    python3-devel \
+    python3-numpy \
+    cmake \
+    ninja-build \
+    gcc-c++ \
+    make \
+    gtk3-devel \
+    libpng-devel \
+    libjpeg-turbo-devel \
+    cuda-toolkit-13-2
+
+# FFmpeg must be installed separately with --allowerasing.
+# Fedora 41+ ships its own codec-stripped split packages
+# (libswscale-free, libswresample-free, libpostproc-free, ...) that conflict
+# with RPM Fusion's unified ffmpeg-libs. --allowerasing lets DNF replace
+# those *-free stubs with RPM Fusion's full build, which is a strict superset.
+log "Installing ffmpeg (replacing Fedora *-free stubs with RPM Fusion build)..."
+sudo dnf install -y --allowerasing \
+    ffmpeg \
+    ffmpeg-devel \
+    ffmpeg-libs
+
+# == 4. Verify NVENC / NVDEC headers ==========================================
+log "Checking for Video Codec SDK headers..."
+MISSING_HEADERS=()
+for HDR in nvcuvid.h cuviddec.h nvEncodeAPI.h; do
+    if [[ ! -f "/usr/local/cuda-13.2/include/${HDR}" ]]; then
+        MISSING_HEADERS+=("${HDR}")
+    fi
+done
+
+if [[ ${#MISSING_HEADERS[@]} -gt 0 ]]; then
+    log "WARNING: The following headers were not found under /usr/local/cuda/include:"
+    for HDR in "${MISSING_HEADERS[@]}"; do
+        log "  - ${HDR}"
+    done
+    log "Download the NVIDIA Video Codec SDK from:"
+    log "  https://developer.nvidia.com/nvidia-video-codec-sdk"
+    log "and copy the Interface/ headers to /usr/local/cuda-13.2/include/ before continuing."
+    die "Missing NVENC/NVDEC headers. See instructions above."
+else
+    log "All NVENC/NVDEC headers found."
+fi
+
+# == 5. CMake configure ========================================================
+log "Configuring OpenCV..."
+cd "${SCRIPT_DIR}/opencv_build"
+
+cmake \
+    -GNinja \
+    -DWITH_CUDA=ON \
+    -DWITH_CUDNN=OFF \
+    -DOPENCV_DNN_CUDA=OFF \
+    -DCUDA_ARCH_BIN="7.5" \
+    -DWITH_CUBLAS=ON \
+    -DWITH_NVCUVID=ON \
+    -DWITH_NVCUVENC=ON \
+    -DWITH_FFMPEG=ON \
+    -DOPENCV_EXTRA_MODULES_PATH="${SCRIPT_DIR}/opencv_contrib/modules" \
+    -DBUILD_opencv_legacy=OFF \
+    -DCMAKE_BUILD_TYPE=Release \
+    \
+    -DCMAKE_INSTALL_PREFIX=/usr/local \
+    \
+    "${SCRIPT_DIR}/opencv"
+
+# Confirm the summary lines we care about before committing to a long build.
+# cmake writes the summary to CMakeCache.txt; grep it there so we don't have
+# to re-parse stdout after the fact.
+check_cmake_flag() {
+    local label="$1" pattern="$2" expected="$3"
+    local actual
+    actual="$(grep -i "${pattern}" CMakeCache.txt | head -1 | cut -d= -f2 | tr -d '[:space:]')"
+    if [[ "${actual^^}" != "${expected^^}" ]]; then
+        die "CMake flag check failed: ${label} - expected '${expected}', got '${actual}'"
+    fi
+    log "  OK  ${label}: ${actual}"
+}
+
+log "Verifying CMake configuration summary..."
+# These map to well-known CMakeCache keys; adjust if upstream renames them.
+check_cmake_flag "WITH_CUDA"    "WITH_CUDA:BOOL"    "ON"
+check_cmake_flag "WITH_FFMPEG"  "WITH_FFMPEG:BOOL"  "ON"
+check_cmake_flag "WITH_CUBLAS"  "WITH_CUBLAS:BOOL"  "ON"
+check_cmake_flag "WITH_NVCUVID" "WITH_NVCUVID:BOOL" "ON"
+
+# == 6. Build ==================================================================
+log "Building (this will take a while)..."
+ninja -j"$(nproc)"
+
+# == 7. Install ================================================================
+log "Installing..."
+sudo ninja install
+
+# == 8. ldconfig drop-in for /usr/local/lib64 =================================
+# On Fedora (and all RPM-based distros), `make install` / `ninja install`
+# targets a lib64/ directory when building 64-bit. /usr/local/lib64 is not
+# in the default ldconfig search path, so we register it explicitly.
+LDCONF_FILE="/etc/ld.so.conf.d/opencv.conf"
+log "Writing ldconfig drop-in -> ${LDCONF_FILE}"
+
+sudo tee "${LDCONF_FILE}" > /dev/null <<'EOF'
+# Added by build_opencv_fedora
+# Required because OpenCV installs into /usr/local/lib64 on Fedora,
+# which is not searched by default.
+/usr/local/lib64
+EOF
+
+sudo ldconfig
+log "ldconfig updated."
+
+# == 9. Sanity check ===========================================================
+log "Running sanity check..."
+python3 - <<'PYEOF'
+import cv2
+count = cv2.cuda.getCudaEnabledDeviceCount()
+print(f"CUDA-enabled devices visible to OpenCV: {count}")
+if count == 0:
+    raise SystemExit("No CUDA devices found - check driver and CUDA installation.")
+build_info = cv2.getBuildInformation()
+for keyword in ("CUDA", "NVCUVID", "NVCUVENC", "FFmpeg"):
+    for line in build_info.splitlines():
+        if keyword in line:
+            print(line.strip())
+            break
+PYEOF
+
+log "Done. OpenCV with CUDA support is installed."

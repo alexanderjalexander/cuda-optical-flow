@@ -6,14 +6,9 @@ This repo serves to host the files for a CUDA-based implementation of Sparse Luc
 
 ### Dependency Installation on Fedora 43
 
-These instructions assume you have a qualifying NVIDIA GPU with architecture at least SM_75.
+See [SETUP.md](./SETUP.md#fedora-43) for a full set of instructions on building & installing the the necessary dependencies for this project.
 
-+ Install the appropriate NVIDIA Drivers, either from cuda-fedora43-... or the RPM nonfree repositories.
-+ Install the `opencv` development headers
-  - `sudo dnf install opencv opencv-devel`
-+ Install CUDA Toolkit
-  - See the [official instructions here](https://developer.nvidia.com/cuda-downloads?target_os=Linux&target_arch=x86_64&Distribution=Fedora&target_version=43&target_type=rpm_network) for installing it over a network installation.
-+ Clone the repository
+These instructions assume you have a qualifying NVIDIA GPU with architecture at least `SM_75`.
 
 ### Dependency Installation on Debian 13
 
