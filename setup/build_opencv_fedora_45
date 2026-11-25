@@ -109,7 +109,7 @@ sudo dnf install -y --allowerasing \
 log "Checking for Video Codec SDK headers..."
 MISSING_HEADERS=()
 for HDR in nvcuvid.h cuviddec.h nvEncodeAPI.h; do
-    if [[ ! -f "/usr/local/cuda-13.2/include/${HDR}" ]]; then
+    if [[ ! -f "/usr/local/cuda/include/${HDR}" ]]; then
         MISSING_HEADERS+=("${HDR}")
     fi
 done
@@ -121,7 +121,7 @@ if [[ ${#MISSING_HEADERS[@]} -gt 0 ]]; then
     done
     log "Download the NVIDIA Video Codec SDK from:"
     log "  https://developer.nvidia.com/nvidia-video-codec-sdk"
-    log "and copy the Interface/ headers to /usr/local/cuda-13.2/include/ before continuing."
+    log "and copy the Interface/ headers to /usr/local/cuda/include/ before continuing."
     die "Missing NVENC/NVDEC headers. See instructions above."
 else
     log "All NVENC/NVDEC headers found."
