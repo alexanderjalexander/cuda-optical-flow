@@ -15,15 +15,17 @@ rm -rf "${SCRIPT_DIR}/opencv_build"
 mkdir -p "${SCRIPT_DIR}/opencv_build"
 
 # == Helpers ===================================================================
-log()  { echo ">>> $*"; }
+log()  { echo; echo ">>> $*"; }
 die()  { echo "ERROR: $*" >&2; exit 1; }
 
 FEDORA_VER="$(rpm -E '%fedora')"
 FEDORA_VER=$((FEDORA_VER))
 log "Detected Fedora ${FEDORA_VER}"
-if [ ${FEDORA_VER} -ne 45 ]; then
+if [ ${FEDORA_VER} -lt 43 ]; then
     die "Unsupported Fedora version: ${FEDORA_VER} (script requires Fedora 45)"
 fi
+
+CUDA_FEDORA_VER=43
 
 # == 0. Cloning OpenCV & OpenCV Contrib ========================================
 cd "${SCRIPT_DIR}"
@@ -48,9 +50,9 @@ if [[ $? != "0" ]]; then
     log "Could not find 'cuda-toolkit' package."
 
     if ! dnf repolist enabled 2>/dev/null | grep -qi "cuda"; then
-        log "Adding NVIDIA CUDA repository for Fedora ${FEDORA_VER}..."
+        log "Adding NVIDIA CUDA repository for Fedora ${CUDA_FEDORA_VER}..."
 
-        sudo dnf config-manager addrepo --from-repofile "https://developer.download.nvidia.com/compute/cuda/repos/fedora${FEDORA_VER}/x86_64/cuda-fedora${FEDORA_VER}.repo"
+        sudo dnf config-manager addrepo --from-repofile "https://developer.download.nvidia.com/compute/cuda/repos/fedora${CUDA_FEDORA_VER}/x86_64/cuda-fedora${CUDA_FEDORA_VER}.repo"
         sudo dnf clean all
         sudo dnf makecache || die "dnf makecache failed after adding CUDA repo"
     else

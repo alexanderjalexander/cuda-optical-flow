@@ -19,12 +19,17 @@ log()  { echo ">>> $*"; }
 die()  { echo "ERROR: $*" >&2; exit 1; }
 
 FEDORA_VER="$(rpm -E '%fedora')"
+FEDORA_VER=$((FEDORA_VER))
 log "Detected Fedora ${FEDORA_VER}"
-if ! [[ "${FEDORA_VER}" -eq "43" ]]; then
+if [ ${FEDORA_VER} -ne 43 ]; then
     die "Unsupported Fedora version: ${FEDORA_VER} (script requires Fedora 43)"
 fi
 
+CUDA_FEDORA_VER=43
+
 # == 0. Cloning OpenCV & OpenCV Contrib ========================================
+cd "${SCRIPT_DIR}"
+
 if ! git clone https://github.com/opencv/opencv.git; then
     die "Could not clone OpenCV repository."
 fi
@@ -38,9 +43,9 @@ fi
 # needed. Confirmed present at:
 #   https://developer.download.nvidia.com/compute/cuda/repos/fedora43/x86_64/
 if ! dnf repolist enabled 2>/dev/null | grep -qi "cuda"; then
-    log "Adding NVIDIA CUDA repository for Fedora ${FEDORA_VER}..."
+    log "Adding NVIDIA CUDA repository for Fedora ${CUDA_FEDORA_VER}..."
 
-    sudo dnf config-manager addrepo --from-repofile "https://developer.download.nvidia.com/compute/cuda/repos/fedora${FEDORA_VER}/x86_64/cuda-fedora${FEDORA_VER}.repo"
+    sudo dnf config-manager addrepo --from-repofile "https://developer.download.nvidia.com/compute/cuda/repos/fedora${CUDA_FEDORA_VER}/x86_64/cuda-fedora${CUDA_FEDORA_VER}.repo"
     sudo dnf clean all
     sudo dnf makecache || die "dnf makecache failed after adding CUDA repo"
 else
@@ -59,7 +64,7 @@ fi
 # == 3. Install build dependencies ============================================
 # Fedora package equivalents:
 #   python3-dev          -> python3-devel
-#   build-essential      -> gcc-c++ make
+#   build-essential      -> gcc-c++ make (will always be gcc-15)
 #   libgtk-3-dev         -> gtk3-devel
 #   libpng-dev           -> libpng-devel
 #   libjpeg-dev          -> libjpeg-turbo-devel
