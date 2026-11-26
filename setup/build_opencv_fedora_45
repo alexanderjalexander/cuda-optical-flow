@@ -40,11 +40,11 @@ else
 fi
 
 if ! dnf repolist enabled 2>/dev/null | grep -qi "rpmfusion-nonfree"; then
-    log_header "Adding RPM Fusion Free repository..."
+    log_header "Adding RPM Fusion Nonfree repository..."
     sudo dnf install -y \
-        "https://download1.rpmfusion.org/free/fedora/rpmfusion-nonfree-release-${FEDORA_VER}.noarch.rpm"
+        "https://download1.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-${FEDORA_VER}.noarch.rpm"
 else
-    log "RPM Fusion Free already present, skipping."
+    log "RPM Fusion Nonfree already present, skipping."
 fi
 
 
@@ -121,8 +121,7 @@ sudo dnf install -y \
     make \
     gtk3-devel \
     libpng-devel \
-    libjpeg-turbo-devel \
-    cuda-toolkit
+    libjpeg-turbo-devel
 
 # FFmpeg must be installed separately with --allowerasing.
 # Fedora 41+ ships its own codec-stripped split packages
@@ -189,7 +188,7 @@ cd "${SCRIPT_DIR}"
 log "Configuring OpenCV..."
 cd "${SCRIPT_DIR}/opencv_build"
 
-GCC_PATH=$(which gcc-15)
+GCC_PATH=$(which g++)
 
 cmake \
     -GNinja \
@@ -202,12 +201,9 @@ cmake \
     -DWITH_NVCUVENC=ON \
     -DWITH_FFMPEG=ON \
     -DOPENCV_EXTRA_MODULES_PATH="${SCRIPT_DIR}/opencv_contrib/modules" \
-    -DCUDA_HOST_COMPILER="${GCC_PATH}" \
     -DBUILD_opencv_legacy=OFF \
     -DCMAKE_BUILD_TYPE=Release \
-    \
     -DCMAKE_INSTALL_PREFIX=/usr/local \
-    \
     "${SCRIPT_DIR}/opencv"
 
 # Confirm the summary lines we care about before committing to a long build.
