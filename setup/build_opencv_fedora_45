@@ -17,13 +17,31 @@ die()  { echo "[FATAL]: $*" >&2; exit 1; }
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+CLEAN_BUILD=0
 
+for arg in "$@"; do
+    case "$arg" in
+        --clean-build)
+            CLEAN_BUILD=1
+            ;;
+        -h|--help)
+            echo "Usage: $0 [--clean-build]"
+            exit 0
+            ;;
+        *)
+            die "Unknown option: ${arg}. Usage: $0 [--clean-build]"
+            ;;
+    esac
+done
 
 # == Operating System Check ===================================================
 . /etc/os-release
+log_header "Performing OS check..."
 [[ "${ID:-}" == fedora ]] || die "This script requires Fedora."
 FEDORA_VER="$(rpm -E '%fedora')"
 [[ "$FEDORA_VER" == 45 ]] || die "Requires Fedora 45; detected ${FEDORA_VER}."
+
+log "OS verified. Continuing..."
 
 # Locking the version number, this is a known-good one that works well, and contains up to date versions.
 CUDA_FEDORA_VER=44
@@ -31,34 +49,23 @@ CUDA_FEDORA_VER=44
 
 
 # == RPM Fusion Free & Nonfree (provides ffmpeg, NVIDIA drivers, etc.) ========
-if ! dnf repolist enabled 2>/dev/null | grep -qi "rpmfusion-free"; then
-    log_header "Adding RPM Fusion Free repository..."
-    sudo dnf install -y \
-        "https://download1.rpmfusion.org/free/fedora/rpmfusion-free-release-${FEDORA_VER}.noarch.rpm"
+RPM_FUSION_FREE_URL="https://download1.rpmfusion.org/free/fedora/rpmfusion-free-release-${FEDORA_VER}.noarch.rpm"
+RPM_FUSION_NONFREE_URL=""https://download1.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-${FEDORA_VER}.noarch.rpm""
+
+log_header "Adding RPM Fusion Free repository..."
+if ! dnf repolist --enabled 2>/dev/null | grep -qi "rpmfusion-free"; then
+    sudo dnf install -y "${RPM_FUSION_FREE_URL}" || die "Could not install RPM Fusion Free Repository. Exiting."
+    log "RPM Fusion Free Repository installed."
 else
-    log "RPM Fusion Free already present, skipping."
+    log "RPM Fusion Free Repository already present, skipping installation."
 fi
 
-if ! dnf repolist enabled 2>/dev/null | grep -qi "rpmfusion-nonfree"; then
-    log_header "Adding RPM Fusion Nonfree repository..."
-    sudo dnf install -y \
-        "https://download1.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-${FEDORA_VER}.noarch.rpm"
+log_header "Adding RPM Fusion Nonfree repository..."
+if ! dnf repolist --enabled 2>/dev/null | grep -qi "rpmfusion-nonfree"; then
+    sudo dnf install -y "${RPM_FUSION_NONFREE_URL}" || die "Could not install RPM Fusion Nonfree Repository. Exiting."
+    log "RPM Fusion Nonfree Repository installed."
 else
-    log "RPM Fusion Nonfree already present, skipping."
-fi
-
-
-
-# == NVIDIA Drivers ===========================================================
-log_header "Checking to see if NVIDIA drivers are already installed..."
-if ! which nvidia-smi >/dev/null; then
-    log "NVIDIA drivers not installed."
-
-    sudo dnf install -y akmod-nvidia xorg-x11-drv-nvidia-cuda
-
-    die "Driver packages installed. Reboot, verify nvidia-smi, then rerun this script. Please reboot system before continuing with the rest of the script."
-else
-    log "NVIDIA drivers already present."
+    log "RPM Fusion Nonfree Repository already present, skipping installation."
 fi
 
 
@@ -86,14 +93,38 @@ log "Ensuring NVIDIA CUDA repository is enabled..."
 sudo dnf config-manager setopt "${CUDA_REPO_ID}.enabled=1"
 sudo dnf config-manager setopt \
     "${CUDA_REPO_ID}.exclude=nvidia-driver*,cuda-drivers*,nvidia-modprobe,nvidia-persistenced,nvidia-settings,nvidia-libXNVCtrl*,nvidia-xconfig,nvidia-open,nvidia-imex,nvidia-kmod-common,libnvidia-fbc,kmod-nvidia-*-dkms,nvidia-fs*,nvidia-gds*,xorg-x11-nvidia*"
+
+
+
+# == DNF Cache Clean & Make ===================================================
 sudo dnf clean all
 sudo dnf makecache || die "dnf makecache failed after configuring CUDA repo"
 
-log_header "Installing CUDA Toolkit..."
-sudo dnf install -y cuda-toolkit
 
-command -v nvcc >/dev/null || die "CUDA Toolkit installation did not provide nvcc."
-nvcc --version
+
+# == CUDA Toolkit Installation ================================================
+log_header "Checking for nvcc..."
+if ! command -v nvcc >/dev/null; then
+    log "nvcc not present. Installing CUDA Toolkit..."
+    sudo dnf install -y cuda-toolkit
+    command -v nvcc >/dev/null || die "CUDA Toolkit installation did not provide nvcc."
+    log "CUDA Toolkit installed."
+else
+    log "nvcc present. Skipping CUDA Toolkit installation."
+fi
+
+
+# == NVIDIA Drivers ===========================================================
+log_header "Checking to see if NVIDIA drivers are already installed..."
+if ! which nvidia-smi >/dev/null; then
+    log "NVIDIA drivers not installed."
+
+    sudo dnf install -y akmod-nvidia xorg-x11-drv-nvidia-cuda
+
+    die "Driver packages installed. Reboot, verify nvidia-smi, then rerun this script. Please reboot system before continuing with the rest of the script."
+else
+    log "NVIDIA drivers already present."
+fi
 
 
 
@@ -161,34 +192,51 @@ fi
 
 
 # == Cloning OpenCV & OpenCV Contrib ========================================
-# TODO: remove this
-# TODO: validate existing checkouts
-# TODO: validate versions
-# configure with CMAKE as appropriately :P
-rm -rf "${SCRIPT_DIR}/opencv"
-rm -rf "${SCRIPT_DIR}/opencv_contrib"
-rm -rf "${SCRIPT_DIR}/opencv_build"
+cd "${SCRIPT_DIR}"
+
+ensure_repo() {
+    local dir="$1" url="$2"
+
+    if (( CLEAN_BUILD )); then
+        log "Clean build enabled. Removing existing '${dir}' repo..."
+        rm -rf "${dir}"
+        log "Recloning '${dir}' repo..."
+        git clone "${url}" "${dir}" || die "Could not clone ${url}."
+        return
+    fi
+
+    if [[ -d "${dir}/.git" ]]; then
+        log "Using existing checkout: ${dir}"
+        cd "${dir}"
+        git pull
+        cd "${SCRIPT_DIR}"
+        log "Latest changes pulled."
+    elif [[ -e "${dir}" ]]; then
+        die "${dir} exists but is not a Git checkout; inspect it before proceeding."
+    else
+        git clone "${url}" "${dir}" || die "Could not clone ${url}."
+    fi
+}
+
+log_header "Preparing OpenCV & OpenCV Contrib..."
+
+ensure_repo "${SCRIPT_DIR}/opencv" \
+    "https://github.com/opencv/opencv.git"
+ensure_repo "${SCRIPT_DIR}/opencv_contrib" \
+    "https://github.com/opencv/opencv_contrib.git"
+
+if (( CLEAN_BUILD )); then
+    log "Clean build enabled. Removing existing OpenCV build directory..."
+    rm -rf -- "${SCRIPT_DIR}/opencv_build"
+fi
+
 mkdir -p "${SCRIPT_DIR}/opencv_build"
-
-cd "${SCRIPT_DIR}"
-
-if ! git clone https://github.com/opencv/opencv.git; then
-    die "Could not clone OpenCV repository."
-fi
-
-if ! git clone https://github.com/opencv/opencv_contrib.git; then
-    die "Could not clone OpenCV-Contrib repository."
-fi
-
-cd "${SCRIPT_DIR}"
 
 
 
 # == CMake configure ==========================================================
-log "Configuring OpenCV..."
+log_header "Configuring OpenCV..."
 cd "${SCRIPT_DIR}/opencv_build"
-
-GCC_PATH=$(which g++)
 
 cmake \
     -GNinja \
@@ -229,13 +277,13 @@ check_cmake_flag "WITH_NVCUVID" "WITH_NVCUVID:BOOL" "ON"
 
 
 # == Build ====================================================================
-log "Building (this will take a while)..."
+log_header "Building (this will take a while)..."
 ninja -j"$(nproc)"
 
 
 
 # == Install ==================================================================
-log "Installing..."
+log_header "Installing..."
 sudo ninja install
 
 
@@ -245,7 +293,7 @@ sudo ninja install
 # targets a lib64/ directory when building 64-bit. /usr/local/lib64 is not
 # in the default ldconfig search path, so we register it explicitly.
 LDCONF_FILE="/etc/ld.so.conf.d/opencv.conf"
-log "Writing ldconfig drop-in -> ${LDCONF_FILE}"
+log_header "Writing ldconfig drop-in -> ${LDCONF_FILE}"
 
 sudo tee "${LDCONF_FILE}" > /dev/null <<'EOF'
 # Added by build_opencv_fedora
@@ -260,7 +308,7 @@ log "ldconfig updated."
 
 
 # == Sanity check =============================================================
-log "Running sanity check..."
+log_header "Running sanity check..."
 python3 - <<'PYEOF'
 import cv2
 count = cv2.cuda.getCudaEnabledDeviceCount()
@@ -275,4 +323,7 @@ for keyword in ("CUDA", "NVCUVID", "NVCUVENC", "FFmpeg"):
             break
 PYEOF
 
-log "Done. OpenCV with CUDA support is installed."
+
+
+# == Finale ===================================================================
+log_header "Done. All dependencies successfully installed."
