@@ -89,10 +89,15 @@ else
     log "NVIDIA CUDA repository is already configured."
 fi
 
+REPO_OPTS="${CUDA_REPO_ID}.exclude="
+REPO_OPTS+="nvidia-driver*,cuda-drivers*,nvidia-modprobe,nvidia-persistenced,"
+REPO_OPTS+="nvidia-settings,nvidia-libXNVCtrl*,nvidia-xconfig,nvidia-open,nvidia-imex,"
+REPO_OPTS+="nvidia-kmod-common,libnvidia-fbc,kmod-nvidia-*-dkms,"
+REPO_OPTS+="nvidia-fs*,nvidia-gds*,xorg-x11-nvidia*"
+
 log "Ensuring NVIDIA CUDA repository is enabled..."
 sudo dnf config-manager setopt "${CUDA_REPO_ID}.enabled=1"
-sudo dnf config-manager setopt \
-    "${CUDA_REPO_ID}.exclude=nvidia-driver*,cuda-drivers*,nvidia-modprobe,nvidia-persistenced,nvidia-settings,nvidia-libXNVCtrl*,nvidia-xconfig,nvidia-open,nvidia-imex,nvidia-kmod-common,libnvidia-fbc,kmod-nvidia-*-dkms,nvidia-fs*,nvidia-gds*,xorg-x11-nvidia*"
+sudo dnf config-manager setopt "${REPO_OPTS}"
 
 
 
