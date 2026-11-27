@@ -34,6 +34,8 @@ for arg in "$@"; do
     esac
 done
 
+
+
 # == Operating System Check ===================================================
 . /etc/os-release
 log_header "Performing OS check..."
@@ -243,6 +245,9 @@ mkdir -p "${SCRIPT_DIR}/opencv_build"
 log_header "Configuring OpenCV..."
 cd "${SCRIPT_DIR}/opencv_build"
 
+# See that HARFBUZZ line? Yeah, basically the ones that are included with
+#   Fedora 45 don't really... mesh well with this? Essentially, we jsut bundle
+#   in the OpenCV Harfbuzz so that this compiles properly.
 cmake \
     -GNinja \
     -DWITH_CUDA=ON \
