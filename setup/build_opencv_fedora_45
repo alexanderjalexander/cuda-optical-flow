@@ -253,6 +253,7 @@ cmake \
     -DWITH_NVCUVID=ON \
     -DWITH_NVCUVENC=ON \
     -DWITH_FFMPEG=ON \
+    -DBUILD_HARFBUZZ=ON \
     -DOPENCV_EXTRA_MODULES_PATH="${SCRIPT_DIR}/opencv_contrib/modules" \
     -DBUILD_opencv_legacy=OFF \
     -DCMAKE_BUILD_TYPE=Release \
