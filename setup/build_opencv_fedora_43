@@ -14,20 +14,7 @@ CLEAN_BUILD=0
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-FEDORA_VER="$(rpm -E '%fedora')"
-
 CUDA_FEDORA_VER=43
-CUDA_REPO_ID="cuda-fedora${CUDA_FEDORA_VER}-x86_64"
-CUDA_REPO_URL="https://developer.download.nvidia.com/compute/cuda/repos/fedora${CUDA_FEDORA_VER}/x86_64/cuda-fedora${CUDA_FEDORA_VER}.repo"
-
-REPO_OPTS="${CUDA_REPO_ID}.exclude="
-REPO_OPTS+="nvidia-driver*,cuda-drivers*,nvidia-modprobe,nvidia-persistenced,"
-REPO_OPTS+="nvidia-settings,nvidia-libXNVCtrl*,nvidia-xconfig,nvidia-open,nvidia-imex,"
-REPO_OPTS+="nvidia-kmod-common,libnvidia-fbc,kmod-nvidia-*-dkms,"
-REPO_OPTS+="nvidia-fs*,nvidia-gds*,xorg-x11-nvidia*"
-
-RPM_FUSION_FREE_URL="https://download1.rpmfusion.org/free/fedora/rpmfusion-free-release-${FEDORA_VER}.noarch.rpm"
-RPM_FUSION_NONFREE_URL=""https://download1.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-${FEDORA_VER}.noarch.rpm""
 
 OPENCV_VERSION="5.1.0"
 OPENCV_PREFIX="/opt/opencv-${OPENCV_VERSION}"
@@ -36,18 +23,11 @@ SRC_DIR="${SCRIPT_DIR}/opencv"
 CONTRIB_DIR="${SCRIPT_DIR}/opencv_contrib"
 BUILD_DIR="${SCRIPT_DIR}/opencv_build-${OPENCV_VERSION}"
 
+. "${SCRIPT_DIR}/shared/fedora.sh"
 
 
-# == Helpers ==================================================================
-log_header()  { echo; echo ">>> $*"; }
-log()  { echo "[INFO]: $*"; }
-warn()  { echo "[WARN]: $*"; }
-die()  { echo "[FATAL]: $*" >&2; exit 1; }
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-
-CLEAN_BUILD=0
-
+# == Args Parsing =============================================================
 for arg in "$@"; do
     case "$arg" in
         --clean-build)
@@ -66,31 +46,18 @@ done
 
 
 # == Operating System Check ===================================================
-. /etc/os-release
 log_header "Performing OS check..."
-[[ "${ID:-}" == fedora ]] || die "This script requires Fedora."
-[[ "$FEDORA_VER" == 43 ]] || die "Requires Fedora 43; detected ${FEDORA_VER}."
-
+perform_os_check "43"
 log "OS verified. Continuing..."
 
 
 
 # == RPM Fusion Free & Nonfree (provides ffmpeg, NVIDIA drivers, etc.) ========
 log_header "Adding RPM Fusion Free repository..."
-if ! dnf repolist --enabled 2>/dev/null | grep -qi "rpmfusion-free"; then
-    sudo dnf install -y "${RPM_FUSION_FREE_URL}" || die "Could not install RPM Fusion Free Repository. Exiting."
-    log "RPM Fusion Free Repository installed."
-else
-    log "RPM Fusion Free Repository already present, skipping installation."
-fi
+install_rpm_fusion_free ${VERSION_ID}
 
 log_header "Adding RPM Fusion Nonfree repository..."
-if ! dnf repolist --enabled 2>/dev/null | grep -qi "rpmfusion-nonfree"; then
-    sudo dnf install -y "${RPM_FUSION_NONFREE_URL}" || die "Could not install RPM Fusion Nonfree Repository. Exiting."
-    log "RPM Fusion Nonfree Repository installed."
-else
-    log "RPM Fusion Nonfree Repository already present, skipping installation."
-fi
+install_rpm_fusion_nonfree ${VERSION_ID}
 
 
 
@@ -99,52 +66,25 @@ fi
 # needed. Confirmed present at:
 #   https://developer.download.nvidia.com/compute/cuda/repos/fedora43/x86_64/
 log_header "Performing CUDA Repository Check..."
-
-CUDA_REPOS="$(dnf repolist --all 2>/dev/null)" || die "Could not list DNF repositories."
-if ! grep -Fq "${CUDA_REPO_ID}" <<< "${CUDA_REPOS}"; then
-    log "Adding NVIDIA CUDA repository for Fedora ${CUDA_FEDORA_VER}..."
-    sudo dnf config-manager addrepo --from-repofile "${CUDA_REPO_URL}"
-else
-    log "NVIDIA CUDA repository is already configured."
-fi
-
-log "Ensuring NVIDIA CUDA repository is enabled..."
-sudo dnf config-manager setopt "${CUDA_REPO_ID}.enabled=1"
-sudo dnf config-manager setopt "${REPO_OPTS}"
+install_cuda_repo "${CUDA_FEDORA_VER}"
 
 
 
 # == DNF Cache Clean & Make ===================================================
 log_header "Performing DNF Cache Clean & Make..."
-sudo dnf clean all
-sudo dnf makecache || die "dnf makecache failed after configuring CUDA repo"
+dnf_cache_make_and_clean
 
 
 
 # == CUDA Toolkit Installation ================================================
 log_header "Checking for nvcc..."
-if ! command -v nvcc >/dev/null; then
-    log "nvcc not present. Installing CUDA Toolkit..."
-    sudo dnf install -y cuda-toolkit
-    command -v nvcc >/dev/null || die "CUDA Toolkit installation did not provide nvcc."
-    log "CUDA Toolkit installed."
-else
-    log "nvcc present. Skipping CUDA Toolkit installation."
-fi
+perform_nvcc_check
 
 
 
 # == NVIDIA Drivers ===========================================================
 log_header "Checking to see if NVIDIA drivers are already installed..."
-if ! which nvidia-smi >/dev/null; then
-    log "NVIDIA drivers not installed."
-
-    sudo dnf install -y akmod-nvidia xorg-x11-drv-nvidia-cuda
-
-    die "Driver packages installed. Reboot, verify nvidia-smi, then rerun this script. Please reboot system before continuing with the rest of the script."
-else
-    log "NVIDIA drivers already present."
-fi
+install_nvidia_drivers
 
 
 
@@ -158,20 +98,8 @@ fi
 #   libavcodec/format/
 #     util/swscale/
 #     device-dev         -> ffmpeg-devel  (single package on Fedora/RPM Fusion)
-#
-# NVENC / NVDEC headers (nvcuvid.h, nvEncodeAPI.h) ship inside the CUDA
-# toolkit under /usr/local/cuda/include/ - pulled in by cuda-toolkit below.
-log "Installing dependencies..."
-sudo dnf install -y \
-    python3-devel \
-    python3-numpy \
-    cmake \
-    ninja-build \
-    gcc-c++ \
-    make \
-    gtk3-devel \
-    libpng-devel \
-    libjpeg-turbo-devel
+log "Installing main dependencies..."
+install_main_dependencies
 
 # FFmpeg must be installed separately with --allowerasing.
 # Fedora 41+ ships its own codec-stripped split packages
@@ -179,86 +107,27 @@ sudo dnf install -y \
 # with RPM Fusion's unified ffmpeg-libs. --allowerasing lets DNF replace
 # those *-free stubs with RPM Fusion's full build, which is a strict superset.
 log "Installing ffmpeg (replacing Fedora *-free stubs with RPM Fusion build)..."
-sudo dnf install -y --allowerasing \
-    ffmpeg \
-    ffmpeg-devel \
-    ffmpeg-libs
+install_ffmpeg_dependencies
 
 
 
 # == Verify NVENC / NVDEC headers ============================================
 log_header "Checking for Video Codec SDK headers..."
-MISSING_HEADERS=()
-for HDR in nvcuvid.h cuviddec.h nvEncodeAPI.h; do
-    if [[ ! -f "/usr/local/cuda/include/${HDR}" ]]; then
-        MISSING_HEADERS+=("${HDR}")
-    fi
-done
-
-if [[ ${#MISSING_HEADERS[@]} -gt 0 ]]; then
-    log "WARNING: The following headers were not found under /usr/local/cuda/include:"
-    for HDR in "${MISSING_HEADERS[@]}"; do
-        log "  - ${HDR}"
-    done
-    log "Download the NVIDIA Video Codec SDK from:"
-    log "  https://developer.nvidia.com/nvidia-video-codec-sdk"
-    log "and copy the Interface/ headers to /usr/local/cuda/include/ before continuing."
-    die "Missing NVENC/NVDEC headers. See instructions above."
-else
-    log "All NVENC/NVDEC headers found."
-fi
-
+perform_video_codec_header_check
 
 
 # == Cloning OpenCV & OpenCV Contrib ========================================
 cd "${SCRIPT_DIR}"
 
-ensure_repo() {
-    local dir="$1" url="$2" commit_want commit_have repo_changes
-
-    if (( CLEAN_BUILD )); then
-        log "Clean build enabled. Removing existing '${dir}' repo..."
-        rm -rf -- "${dir}"
-    fi
-
-    if [[ ! -e "${dir}" ]]; then
-        git init --quiet "${dir}" || die "Could not create ${dir}."
-    elif [[ ! -d "${dir}/.git" ]]; then
-        die "${dir} exists but is not a Git checkout; inspect it before proceeding."
-    else
-        repo_changes="$(git -C "${dir}" status --porcelain)" || die "git status failed in ${dir}."
-        [[ -z "${repo_changes}" ]] || die "${dir} has local changes; commit or remove them first."
-    fi
-
-    # Fetch the tag into FETCH_HEAD. This doesn't create a local tag.
-    # Basically ensures we get the 'exact' version we want, without it being finicky about
-    # tags or commit hashes and whatnot.
-    git -C "${dir}" fetch --depth 1 --no-tags "${url}" "refs/tags/${OPENCV_VERSION}" \
-        || die "Could not fetch tag ${OPENCV_VERSION} from ${url}."
-
-    # ^{commit} turns an annotated tag object into the commit it points to.
-    # Tags have separate hashes compared to the commits, so this is saying
-    # "follow this tag until you get to the commit it belongs to."
-    commit_want="$(git -C "${dir}" rev-parse --verify "FETCH_HEAD^{commit}")" \
-        || die "Could not resolve tag ${OPENCV_VERSION} to a commit in ${dir}."
-
-    # And finally check out what bit we do want indeed here.
-    git -C "${dir}" checkout --quiet --detach "${commit_want}" \
-        || die "Could not check out ${OPENCV_VERSION} in ${dir}."
-
-    # Confirm our HEAD is the commit we fetched from upstream.
-    commit_have="$(git -C "${dir}" rev-parse --verify HEAD)" || die "Could not read HEAD in ${dir}."
-    if [[ "${commit_want}" != "${commit_have}" ]]; then
-        die "${dir}: expected commit ${commit_want}, got ${commit_have}."
-    fi
-
-    log "${dir##*/}: ${OPENCV_VERSION} (${commit_have})"
-}
-
 log_header "Preparing OpenCV & OpenCV Contrib..."
 
-ensure_repo "${SRC_DIR}" "https://github.com/opencv/opencv.git"
-ensure_repo "${CONTRIB_DIR}" "https://github.com/opencv/opencv_contrib.git"
+ensure_repo "${SRC_DIR}" \
+    "https://github.com/opencv/opencv.git" \
+    ${CLEAN_BUILD}
+
+ensure_repo "${CONTRIB_DIR}" \
+    "https://github.com/opencv/opencv_contrib.git" \
+    ${CLEAN_BUILD}
 
 if (( CLEAN_BUILD )); then
     log "Clean build enabled. Removing existing OpenCV build directory..."
@@ -271,7 +140,7 @@ mkdir -p "${BUILD_DIR}"
 
 # == CMake configure ==========================================================
 log_header "Configuring OpenCV..."
-cd "${SCRIPT_DIR}/opencv_build"
+cd "${BUILD_DIR}"
 
 cmake \
     -GNinja \
@@ -283,32 +152,17 @@ cmake \
     -DWITH_NVCUVID=ON \
     -DWITH_NVCUVENC=ON \
     -DWITH_FFMPEG=ON \
-    -DOPENCV_EXTRA_MODULES_PATH="${SCRIPT_DIR}/opencv_contrib/modules" \
+    -DOPENCV_EXTRA_MODULES_PATH="${CONTRIB_DIR}/modules" \
     -DBUILD_opencv_legacy=OFF \
     -DCMAKE_BUILD_TYPE=Release \
-    -DCMAKE_INSTALL_PREFIX=/usr/local \
-    "${SCRIPT_DIR}/opencv"
+    -DCMAKE_INSTALL_PREFIX="${OPENCV_PREFIX}" \
+    -DCMAKE_INSTALL_LIBDIR=lib64 \
+    -DCMAKE_INSTALL_RPATH="${OPENCV_PREFIX}/lib64" \
+    "${SRC_DIR}"
 
-# Confirm the summary lines we care about before committing to a long build.
-# cmake writes the summary to CMakeCache.txt; grep it there so we don't have
-# to re-parse stdout after the fact.
-check_cmake_flag() {
-    local label="$1" pattern="$2" expected="$3"
-    local actual
-    actual="$(grep -i "${pattern}" CMakeCache.txt | head -1 | cut -d= -f2 | tr -d '[:space:]')"
-    if [[ "${actual^^}" != "${expected^^}" ]]; then
-        die "CMake flag check failed: ${label} - expected '${expected}', got '${actual}'"
-    fi
-    log "  OK  ${label}: ${actual}"
-}
-
-log "Verifying CMake configuration summary..."
+log_header "Verifying CMake configuration summary..."
 # These map to well-known CMakeCache keys; adjust if upstream renames them.
-for FEATURE in HAVE_CUDA HAVE_CUBLAS HAVE_NVCUVID HAVE NVCUVENC; do
-    grep -Eq "^$" cvconfig.h \
-        || die "CMake did not enable '${FEATURE}'. Check the config output above."
-    log "  OK ${FEATURE}"
-done
+verify_cmake_flags "${BUILD_DIR}"
 
 
 
@@ -325,50 +179,14 @@ sudo ninja install
 
 
 # == ldconfig drop-in =========================================================
-LDCONF_FILE="/etc/ld.so.conf.d/opencv.conf"
-log_header "Writing ldconfig drop-in -> ${LDCONF_FILE}"
-
-sudo tee "${LDCONF_FILE}" > /dev/null <<EOF
-# Added by build_opencv_fedora_43
-${OPENCV_PREFIX}/lib64
-EOF
-
-sudo ldconfig
-log "ldconfig updated."
+log_header "Writing ldconfig drop-in..."
+create_and_update_ldconfig "${OPENCV_PREFIX}"
 
 
 
 # == Sanity check =============================================================
 log_header "Running sanity check..."
-
-CV2_INIT_PY="$(find /opt/opencv-5.1.0 -type f -path '*-packages/cv2/__init__.py' -print)"
-
-if [[ -z "${CV2_INIT_PY}" ]]; then
-    die "Python bindings not found under ${OPENCV_PREFIX}."
-fi
-
-PY_SITE_PKGS="$(dirname "$(dirname "${CV2_INIT_PY}")")"
-
-PYTHONPATH="${PY_SITE_PKGS}" EXPECTED="${OPENCV_VERSION}" python3 - <<'PYEOF'
-import os, re, cv2
-
-expected = os.environ["EXPECTED"]
-if cv2.__version__ != expected:
-    raise SystemExit(f"Loaded OpenCV {cv2.__version__} from file {cv2.__file__}, expected {expected}.")
-if not re.search(r"FFMPEG:\s+YES", cv2.getBuildInformation()):
-    raise SystemExit(f"OpenCV was built without FFmpeg support. Please investigate build logs and try again.")
-
-count = cv2.cuda.getCudaEnabledDeviceCount()
-print(f"CUDA-enabled devices visible to OpenCV: {count}")
-if count == 0:
-    raise SystemExit("No CUDA devices found - check driver and CUDA installation.")
-build_info = cv2.getBuildInformation()
-for keyword in ("CUDA", "NVCUVID", "NVCUVENC", "FFmpeg"):
-    for line in build_info.splitlines():
-        if keyword in line:
-            print(line.strip())
-            break
-PYEOF
+perform_python_sanity_check "${OPENCV_VERSION}" "${OPENCV_PREFIX}"
 
 
 
