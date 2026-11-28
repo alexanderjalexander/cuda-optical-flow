@@ -2,11 +2,11 @@
 CC = nvcc
 
 # OpenCV Version Selection & Version Pinning
-OPENCV_VERSION = 4.14.0
+OPENCV_VERSION = 5.1.0
 OPENCV_PREFIX  = /opt/opencv-$(OPENCV_VERSION)
-OPENCV_INC = $(OPENCV_PREFIX)/include/opencv4
+OPENCV_INC = $(OPENCV_PREFIX)/include/opencv$(word 1,$(subst ., ,$(OPENCV_VERSION)))
 OPENCV_LIB = $(OPENCV_PREFIX)/lib64
-OPENCV_MODULES = core highgui videoio video imgcodecs imgproc
+OPENCV_MODULES = core highgui videoio video imgcodecs imgproc features
 
 # Compilation Configuration
 FLAGS = -arch=sm_75 -std=c++17 -diag-suppress 611 -MMD -MP
