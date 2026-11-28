@@ -10,6 +10,10 @@ shopt -s nullglob
 # == Configuration ============================================================
 CLEAN_BUILD=0
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+FEDORA_VER="$(rpm -E '%fedora')"
+
 CUDA_FEDORA_VER=44
 CUDA_REPO_ID="cuda-fedora${CUDA_FEDORA_VER}-x86_64"
 CUDA_REPO_URL="https://developer.download.nvidia.com/compute/cuda/repos/fedora${CUDA_FEDORA_VER}/x86_64/cuda-fedora${CUDA_FEDORA_VER}.repo"
@@ -38,8 +42,6 @@ log()  { echo "[INFO]: $*"; }
 warn()  { echo "[WARN]: $*"; }
 die()  { echo "[FATAL]: $*" >&2; exit 1; }
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-
 for arg in "$@"; do
     case "$arg" in
         --clean-build)
@@ -61,10 +63,10 @@ done
 . /etc/os-release
 log_header "Performing OS check..."
 [[ "${ID:-}" == fedora ]] || die "This script requires Fedora."
-FEDORA_VER="$(rpm -E '%fedora')"
 [[ "$FEDORA_VER" == 45 ]] || die "Requires Fedora 45; detected ${FEDORA_VER}."
 
 log "OS verified. Continuing..."
+
 
 
 # == RPM Fusion Free & Nonfree (provides ffmpeg, NVIDIA drivers, etc.) ========
@@ -214,35 +216,38 @@ ensure_repo() {
         rm -rf -- "${dir}"
     fi
 
-    if [[ ! -e -d "${dir}" ]]; then
-        git clone --depth 1 --branch "${OPENCV_VERSION}" "${url}" "${dir}" \
-            || die "Could not clone '${url}' at version ${OPENCV_VERSION}."
+    if [[ ! -e "${dir}" ]]; then
+        git init --quiet "${dir}" || die "Could not create ${dir}."
     elif [[ ! -d "${dir}/.git" ]]; then
-        die "Source directory detected, but it is not a git repository. " \
-            "Please inspect before rerunning the script."
+        die "${dir} exists but is not a Git checkout; inspect it before proceeding."
     else
-        changes="$(git -C "${dir}" status --porcelain)" \
-            || die "git status failed in '${dir}'"
-        if [[ ! -z "${changes}" ]]; then
-            die "Local changes detected in '${dir}'. Please stash/commit/remove them first."
-        fi
-
-        git -C "${dir}" fetch --depth 1 "${url}" \
-            "+refs/tags/${OPENCV_VERSION}:refs/tags/${OPENCV_VERSION}" \
-            || die "Could not fetch tag ${OPENCV_VERSION} from ${url}."
-
-        git -C "${dir}" checkout --detach "refs/tags/${OPENCV_VERSION}" \
-            || die "Could not check out ${OPENCV_VERSION} in ${dir}."
+        repo_changes="$(git -C "${dir}" status --porcelain)" || die "git status failed in ${dir}."
+        [[ -z "${repo_changes}" ]] || die "${dir} has local changes; commit or remove them first."
     fi
 
-    # Commit hash checking, ensure we're on the
-    commit_want="$(git -C "${dir}" rev-parse "refs/tags/${OPENCV_VERSION}^{commit}")"
-    commit_have="$(git -C "${dir}" rev-parse HEAD)"
-    if [[ "${commit_want}" == "${commit_have}" ]]; then
-        die "${dir} is not at tag ${OPENCV_VERSION}. Please manually inspect or clean the setup folders up."
+    # Fetch the tag into FETCH_HEAD. This doesn't create a local tag.
+    # Basically ensures we get the 'exact' version we want, without it being finicky about
+    # tags or commit hashes and whatnot.
+    git -C "${dir}" fetch --depth 1 --no-tags "${url}" "refs/tags/${OPENCV_VERSION}" \
+        || die "Could not fetch tag ${OPENCV_VERSION} from ${url}."
+
+    # ^{commit} turns an annotated tag object into the commit it points to.
+    # Tags have separate hashes compared to the commits, so this is saying
+    # "follow this tag until you get to the commit it belongs to."
+    commit_want="$(git -C "${dir}" rev-parse --verify "FETCH_HEAD^{commit}")" \
+        || die "Could not resolve tag ${OPENCV_VERSION} to a commit in ${dir}."
+
+    # And finally check out what bit we do want indeed here.
+    git -C "${dir}" checkout --quiet --detach "${commit_want}" \
+        || die "Could not check out ${OPENCV_VERSION} in ${dir}."
+
+    # Confirm our HEAD is the commit we fetched from upstream.
+    commit_have="$(git -C "${dir}" rev-parse --verify HEAD)" || die "Could not read HEAD in ${dir}."
+    if [[ "${commit_want}" != "${commit_have}" ]]; then
+        die "${dir}: expected commit ${commit_want}, got ${commit_have}."
     fi
 
-    log "${dir##*/}: ${OPENCV_VERSION} (${have})"
+    log "${dir##*/}: ${OPENCV_VERSION} (${commit_have})"
 }
 
 log_header "Preparing OpenCV & OpenCV Contrib..."
