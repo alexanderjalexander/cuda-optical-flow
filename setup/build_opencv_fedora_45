@@ -7,6 +7,8 @@ set -euo pipefail
 # Glob expansions (.../*) that match to nothing expand to nothing.
 shopt -s nullglob
 
+
+
 # == Configuration ============================================================
 CLEAN_BUILD=0
 
@@ -111,6 +113,7 @@ sudo dnf config-manager setopt "${REPO_OPTS}"
 
 
 # == DNF Cache Clean & Make ===================================================
+log_header "Performing DNF Cache Clean & Make..."
 sudo dnf clean all
 sudo dnf makecache || die "dnf makecache failed after configuring CUDA repo"
 
@@ -126,6 +129,7 @@ if ! command -v nvcc >/dev/null; then
 else
     log "nvcc present. Skipping CUDA Toolkit installation."
 fi
+
 
 
 # == NVIDIA Drivers ===========================================================
@@ -312,18 +316,13 @@ sudo ninja install
 
 
 
-# == ldconfig drop-in for /usr/local/lib64 ====================================
-# On Fedora (and all RPM-based distros), `make install` / `ninja install`
-# targets a lib64/ directory when building 64-bit. /usr/local/lib64 is not
-# in the default ldconfig search path, so we register it explicitly.
+# == ldconfig drop-in =========================================================
 LDCONF_FILE="/etc/ld.so.conf.d/opencv.conf"
 log_header "Writing ldconfig drop-in -> ${LDCONF_FILE}"
 
-sudo tee "${LDCONF_FILE}" > /dev/null <<'EOF'
-# Added by build_opencv_fedora
-# Required because OpenCV installs into /usr/local/lib64 on Fedora,
-# which is not searched by default.
-/usr/local/lib64
+sudo tee "${LDCONF_FILE}" > /dev/null <<EOF
+# Added by build_opencv_fedora_43
+${OPENCV_PREFIX}/lib64
 EOF
 
 sudo ldconfig
@@ -333,8 +332,24 @@ log "ldconfig updated."
 
 # == Sanity check =============================================================
 log_header "Running sanity check..."
-python3 - <<'PYEOF'
-import cv2
+
+CV2_INIT_PY="$(find /opt/opencv-5.1.0 -type f -path '*-packages/cv2/__init__.py' -print)"
+
+if [[ -z "${CV2_INIT_PY}" ]]; then
+    die "Python bindings not found under ${OPENCV_PREFIX}."
+fi
+
+PY_SITE_PKGS="$(dirname "$(dirname "${CV2_INIT_PY}")")"
+
+PYTHONPATH="${PY_SITE_PKGS}" EXPECTED="${OPENCV_VERSION}" python3 - <<'PYEOF'
+import os, re, cv2
+
+expected = os.environ["EXPECTED"]
+if cv2.__version__ != expected:
+    raise SystemExit(f"Loaded OpenCV {cv2.__version__} from file {cv2.__file__}, expected {expected}.")
+if not re.search(r"FFMPEG:\s+YES", cv2.getBuildInformation()):
+    raise SystemExit(f"OpenCV was built without FFmpeg support. Please investigate build logs and try again.")
+
 count = cv2.cuda.getCudaEnabledDeviceCount()
 print(f"CUDA-enabled devices visible to OpenCV: {count}")
 if count == 0:
