@@ -1,19 +1,10 @@
 # Compilers
 CC = nvcc
-HOST_CXX ?= g++
-REQUIRED_GCC_MAJOR ?= 15
-
-# Host Compiler Check
-GCC_MAJOR = $(shell $(HOST_CXX) -dumpversion 2>/dev/null | cut -d. -f1)
-
-ifneq ($(GCC_MAJOR),$(REQUIRED_GCC_MAJOR))
-$(error NVCC requires GCC $(REQUIRED_GCC_MAJOR), but '$(HOST_CXX)' is version '$(or $(GCC_MAJOR),not found)'. Install a GCC $(REQUIRED_GCC_MAJOR) toolchain and run: make HOST_CXX=g++-$(REQUIRED_GCC_MAJOR))
-endif
 
 # Compilation Configuration
-FLAGS = -arch=sm_75 -std=c++17 -diag-suppress 611 -MMD -MP -ccbin $(HOST_CXX)
-IFLAGS = -I/usr/local/include/opencv4
-LDFLAGS = -lopencv_core -lopencv_highgui -lopencv_videoio -lopencv_video -lopencv_imgcodecs -lopencv_imgproc
+FLAGS = -arch=sm_75 -std=c++17 -diag-suppress 611 -MMD -MP
+IFLAGS = -I/usr/local/include/opencv5
+LDFLAGS = -L/usr/local/lib64 -lopencv_core -lopencv_highgui -lopencv_videoio -lopencv_video -lopencv_imgcodecs -lopencv_imgproc
 
 # Formatters & Build Defaults
 FORMATTER = clang-format

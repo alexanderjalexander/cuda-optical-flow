@@ -4,7 +4,6 @@
 
 #include <iostream>
 
-using namespace cv;
 using namespace std;
 
 /**
@@ -26,29 +25,30 @@ sparseLucasKanadeCPU(VideoInfo &video, ProgramFlags flags)
         return;
     }
 
-    Mat old_frame = video.frames.next(true).second;
-    Mat mask = Mat::zeros(old_frame.size(), CV_8UC3);
-    RNG rng;
+    cv::Mat old_frame = video.frames.next(true).second;
+    cv::Mat mask = cv::Mat::zeros(old_frame.size(), CV_8UC3);
+    cv::RNG rng;
 
-    vector<Point2f> p0, p1;
+    vector<cv::Point2f> p0, p1;
 
     bool useHarris = true;
-    goodFeaturesToTrack(old_frame, p0, MAX_FEATURES, QUALITY_LEVEL, HARRIS_DISTANCE, Mat(), HARRIS_MASK_SIZE,
-                        (SOBEL_MASK_RAD / 3.0f), useHarris, HARRIS_EPSILON);
+    cv::goodFeaturesToTrack(old_frame, p0, MAX_FEATURES, QUALITY_LEVEL, HARRIS_DISTANCE, cv::Mat(), HARRIS_MASK_SIZE,
+                            (SOBEL_MASK_RAD / 3.0f), useHarris, HARRIS_EPSILON);
 
     int initialFeatures = p0.size();
 
-    vector<Scalar> pt_colors = getRandomColors(initialFeatures);
+    vector<cv::Scalar> pt_colors = getRandomColors(initialFeatures);
 
-    Mat frame;
+    cv::Mat frame;
     while (!(frame = video.frames.next(true).second).empty())
     {
-        Mat output;
-        cvtColor(frame, output, COLOR_GRAY2BGR);
+        cv::Mat output;
+        cvtColor(frame, output, cv::COLOR_GRAY2BGR);
 
         vector<uchar> status;
         vector<float> err;
-        TermCriteria criteria = TermCriteria((TermCriteria::COUNT) + (TermCriteria::EPS), LK_ITERATIONS, LK_EPSILON);
+        cv::TermCriteria criteria =
+            cv::TermCriteria((cv::TermCriteria::COUNT) + (cv::TermCriteria::EPS), LK_ITERATIONS, LK_EPSILON);
 
         if (p0.empty())
         {
@@ -60,7 +60,7 @@ sparseLucasKanadeCPU(VideoInfo &video, ProgramFlags flags)
             continue;
         }
 
-        calcOpticalFlowPyrLK(old_frame, frame, p0, p1, status, err, Size(LK_WINDOW_WIDTH, LK_WINDOW_WIDTH),
+        calcOpticalFlowPyrLK(old_frame, frame, p0, p1, status, err, cv::Size(LK_WINDOW_WIDTH, LK_WINDOW_WIDTH),
                              (flags.mipMap ? MAX_PYR_LEVELS - 1 : 0), criteria);
 
         drawSparseOpticalFlow(output, mask, p0, p1, status, pt_colors, DRAW_CONTINUOUS_LINES);
@@ -69,8 +69,8 @@ sparseLucasKanadeCPU(VideoInfo &video, ProgramFlags flags)
         old_frame = frame.clone();
 
         // Checking if points have exited the space, and removing them.
-        vector<Point2f> good_new;
-        vector<Scalar> good_colors;
+        vector<cv::Point2f> good_new;
+        vector<cv::Scalar> good_colors;
         for (uint j = 0; j < p0.size(); j++)
         {
             if (status[j] == 1)
@@ -124,14 +124,14 @@ denseLucasKanadeCPU(VideoInfo &video, ProgramFlags flags)
         return;
     }
 
-    Mat old_frame = video.frames.next(true).second;
-    Mat mask = Mat::zeros(old_frame.size(), CV_8UC3);
-    RNG rng;
+    cv::Mat old_frame = video.frames.next(true).second;
+    cv::Mat mask = cv::Mat::zeros(old_frame.size(), CV_8UC3);
+    cv::RNG rng;
 
     int blockSize = 3;
     bool useHarris = true;
 
-    vector<Point2f> p0, p1;
+    vector<cv::Point2f> p0, p1;
 
     p0.reserve(video.width * video.height);
     p1.reserve(video.width * video.height);
@@ -140,25 +140,26 @@ denseLucasKanadeCPU(VideoInfo &video, ProgramFlags flags)
     {
         for (int x = 0; x < video.width; x++)
         {
-            p0.push_back(Point2f((float)x, (float)y));
+            p0.push_back(cv::Point2f((float)x, (float)y));
         }
     }
 
     int initialFeatures = p0.size();
 
-    vector<Scalar> pt_colors = getRandomColors(initialFeatures);
+    vector<cv::Scalar> pt_colors = getRandomColors(initialFeatures);
 
-    Mat frame;
+    cv::Mat frame;
     while (!(frame = video.frames.next(true).second).empty())
     {
-        Mat output = Mat::zeros(video.width, video.height, CV_8UC3);
+        cv::Mat output = cv::Mat::zeros(video.width, video.height, CV_8UC3);
 
         // cvtColor(frame, output, COLOR_GRAY2BGR);
 
         vector<uchar> status;
         vector<float> err;
-        TermCriteria criteria = TermCriteria((TermCriteria::COUNT) + (TermCriteria::EPS), LK_ITERATIONS, LK_EPSILON);
-        calcOpticalFlowPyrLK(old_frame, frame, p0, p1, status, err, Size(15, 15), 2, criteria);
+        cv::TermCriteria criteria =
+            cv::TermCriteria((cv::TermCriteria::COUNT) + (cv::TermCriteria::EPS), LK_ITERATIONS, LK_EPSILON);
+        calcOpticalFlowPyrLK(old_frame, frame, p0, p1, status, err, cv::Size(15, 15), 2, criteria);
 
         drawDenseOpticalFlow(output, p0, p1, status);
 
@@ -166,7 +167,7 @@ denseLucasKanadeCPU(VideoInfo &video, ProgramFlags flags)
         old_frame = frame.clone();
 
         // Frame Recalculation Logic
-        vector<Point2f> good_new;
+        vector<cv::Point2f> good_new;
         for (int y = 0; y < video.height; y++)
         {
             for (int x = 0; x < video.width; x++)
