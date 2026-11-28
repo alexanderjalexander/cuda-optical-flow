@@ -7,6 +7,29 @@ set -euo pipefail
 # Glob expansions (.../*) that match to nothing expand to nothing.
 shopt -s nullglob
 
+# == Configuration ============================================================
+CLEAN_BUILD=0
+
+CUDA_FEDORA_VER=44
+CUDA_REPO_ID="cuda-fedora${CUDA_FEDORA_VER}-x86_64"
+CUDA_REPO_URL="https://developer.download.nvidia.com/compute/cuda/repos/fedora${CUDA_FEDORA_VER}/x86_64/cuda-fedora${CUDA_FEDORA_VER}.repo"
+
+REPO_OPTS="${CUDA_REPO_ID}.exclude="
+REPO_OPTS+="nvidia-driver*,cuda-drivers*,nvidia-modprobe,nvidia-persistenced,"
+REPO_OPTS+="nvidia-settings,nvidia-libXNVCtrl*,nvidia-xconfig,nvidia-open,nvidia-imex,"
+REPO_OPTS+="nvidia-kmod-common,libnvidia-fbc,kmod-nvidia-*-dkms,"
+REPO_OPTS+="nvidia-fs*,nvidia-gds*,xorg-x11-nvidia*"
+
+RPM_FUSION_FREE_URL="https://download1.rpmfusion.org/free/fedora/rpmfusion-free-release-${FEDORA_VER}.noarch.rpm"
+RPM_FUSION_NONFREE_URL=""https://download1.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-${FEDORA_VER}.noarch.rpm""
+
+OPENCV_VERSION="5.1.0"
+OPENCV_PREFIX="/opt/opencv-${OPENCV_VERSION}"
+
+SRC_DIR="${SCRIPT_DIR}/opencv"
+CONTRIB_DIR="${SCRIPT_DIR}/opencv_contrib"
+BUILD_DIR="${SCRIPT_DIR}/opencv_build-${OPENCV_VERSION}"
+
 
 
 # == Helpers ==================================================================
@@ -16,8 +39,6 @@ warn()  { echo "[WARN]: $*"; }
 die()  { echo "[FATAL]: $*" >&2; exit 1; }
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-
-CLEAN_BUILD=0
 
 for arg in "$@"; do
     case "$arg" in
@@ -45,15 +66,8 @@ FEDORA_VER="$(rpm -E '%fedora')"
 
 log "OS verified. Continuing..."
 
-# Locking the version number, this is a known-good one that works well, and contains up to date versions.
-CUDA_FEDORA_VER=44
-
-
 
 # == RPM Fusion Free & Nonfree (provides ffmpeg, NVIDIA drivers, etc.) ========
-RPM_FUSION_FREE_URL="https://download1.rpmfusion.org/free/fedora/rpmfusion-free-release-${FEDORA_VER}.noarch.rpm"
-RPM_FUSION_NONFREE_URL=""https://download1.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-${FEDORA_VER}.noarch.rpm""
-
 log_header "Adding RPM Fusion Free repository..."
 if ! dnf repolist --enabled 2>/dev/null | grep -qi "rpmfusion-free"; then
     sudo dnf install -y "${RPM_FUSION_FREE_URL}" || die "Could not install RPM Fusion Free Repository. Exiting."
@@ -80,9 +94,6 @@ fi
 #   https://developer.download.nvidia.com/compute/cuda/repos/fedora44/x86_64/
 log_header "Performing CUDA Repository Check..."
 
-CUDA_REPO_ID="cuda-fedora${CUDA_FEDORA_VER}-x86_64"
-CUDA_REPO_URL="https://developer.download.nvidia.com/compute/cuda/repos/fedora${CUDA_FEDORA_VER}/x86_64/cuda-fedora${CUDA_FEDORA_VER}.repo"
-
 CUDA_REPOS="$(dnf repolist --all 2>/dev/null)" || die "Could not list DNF repositories."
 if ! grep -Fq "${CUDA_REPO_ID}" <<< "${CUDA_REPOS}"; then
     log "Adding NVIDIA CUDA repository for Fedora ${CUDA_FEDORA_VER}..."
@@ -90,12 +101,6 @@ if ! grep -Fq "${CUDA_REPO_ID}" <<< "${CUDA_REPOS}"; then
 else
     log "NVIDIA CUDA repository is already configured."
 fi
-
-REPO_OPTS="${CUDA_REPO_ID}.exclude="
-REPO_OPTS+="nvidia-driver*,cuda-drivers*,nvidia-modprobe,nvidia-persistenced,"
-REPO_OPTS+="nvidia-settings,nvidia-libXNVCtrl*,nvidia-xconfig,nvidia-open,nvidia-imex,"
-REPO_OPTS+="nvidia-kmod-common,libnvidia-fbc,kmod-nvidia-*-dkms,"
-REPO_OPTS+="nvidia-fs*,nvidia-gds*,xorg-x11-nvidia*"
 
 log "Ensuring NVIDIA CUDA repository is enabled..."
 sudo dnf config-manager setopt "${CUDA_REPO_ID}.enabled=1"
@@ -202,51 +207,64 @@ fi
 cd "${SCRIPT_DIR}"
 
 ensure_repo() {
-    local dir="$1" url="$2"
+    local dir="$1" url="$2" commit_want commit_have repo_changes
 
     if (( CLEAN_BUILD )); then
         log "Clean build enabled. Removing existing '${dir}' repo..."
-        rm -rf "${dir}"
-        log "Recloning '${dir}' repo..."
-        git clone "${url}" "${dir}" || die "Could not clone ${url}."
-        return
+        rm -rf -- "${dir}"
     fi
 
-    if [[ -d "${dir}/.git" ]]; then
-        log "Using existing checkout: ${dir}"
-        cd "${dir}"
-        git pull
-        cd "${SCRIPT_DIR}"
-        log "Latest changes pulled."
-    elif [[ -e "${dir}" ]]; then
-        die "${dir} exists but is not a Git checkout; inspect it before proceeding."
+    if [[ ! -e -d "${dir}" ]]; then
+        git clone --depth 1 --branch "${OPENCV_VERSION}" "${url}" "${dir}" \
+            || die "Could not clone '${url}' at version ${OPENCV_VERSION}."
+    elif [[ ! -d "${dir}/.git" ]]; then
+        die "Source directory detected, but it is not a git repository. " \
+            "Please inspect before rerunning the script."
     else
-        git clone "${url}" "${dir}" || die "Could not clone ${url}."
+        changes="$(git -C "${dir}" status --porcelain)" \
+            || die "git status failed in '${dir}'"
+        if [[ ! -z "${changes}" ]]; then
+            die "Local changes detected in '${dir}'. Please stash/commit/remove them first."
+        fi
+
+        git -C "${dir}" fetch --depth 1 "${url}" \
+            "+refs/tags/${OPENCV_VERSION}:refs/tags/${OPENCV_VERSION}" \
+            || die "Could not fetch tag ${OPENCV_VERSION} from ${url}."
+
+        git -C "${dir}" checkout --detach "refs/tags/${OPENCV_VERSION}" \
+            || die "Could not check out ${OPENCV_VERSION} in ${dir}."
     fi
+
+    # Commit hash checking, ensure we're on the
+    commit_want="$(git -C "${dir}" rev-parse "refs/tags/${OPENCV_VERSION}^{commit}")"
+    commit_have="$(git -C "${dir}" rev-parse HEAD)"
+    if [[ "${commit_want}" == "${commit_have}" ]]; then
+        die "${dir} is not at tag ${OPENCV_VERSION}. Please manually inspect or clean the setup folders up."
+    fi
+
+    log "${dir##*/}: ${OPENCV_VERSION} (${have})"
 }
 
 log_header "Preparing OpenCV & OpenCV Contrib..."
 
-ensure_repo "${SCRIPT_DIR}/opencv" \
-    "https://github.com/opencv/opencv.git"
-ensure_repo "${SCRIPT_DIR}/opencv_contrib" \
-    "https://github.com/opencv/opencv_contrib.git"
+ensure_repo "${SRC_DIR}" "https://github.com/opencv/opencv.git"
+ensure_repo "${CONTRIB_DIR}" "https://github.com/opencv/opencv_contrib.git"
 
 if (( CLEAN_BUILD )); then
     log "Clean build enabled. Removing existing OpenCV build directory..."
-    rm -rf -- "${SCRIPT_DIR}/opencv_build"
+    rm -rf -- "${BUILD_DIR}"
 fi
 
-mkdir -p "${SCRIPT_DIR}/opencv_build"
+mkdir -p "${BUILD_DIR}"
 
 
 
 # == CMake configure ==========================================================
 log_header "Configuring OpenCV..."
-cd "${SCRIPT_DIR}/opencv_build"
+cd "${BUILD_DIR}"
 
 # See that HARFBUZZ line? Yeah, basically the ones that are included with
-#   Fedora 45 don't really... mesh well with this? Essentially, we jsut bundle
+#   Fedora 45 don't really... mesh well with this? Essentially, we just bundle
 #   in the OpenCV Harfbuzz so that this compiles properly.
 cmake \
     -GNinja \
@@ -259,37 +277,27 @@ cmake \
     -DWITH_NVCUVENC=ON \
     -DWITH_FFMPEG=ON \
     -DBUILD_HARFBUZZ=ON \
-    -DOPENCV_EXTRA_MODULES_PATH="${SCRIPT_DIR}/opencv_contrib/modules" \
+    -DOPENCV_EXTRA_MODULES_PATH="${CONTRIB_DIR}/modules" \
     -DBUILD_opencv_legacy=OFF \
     -DCMAKE_BUILD_TYPE=Release \
-    -DCMAKE_INSTALL_PREFIX=/usr/local \
-    "${SCRIPT_DIR}/opencv"
-
-# Confirm the summary lines we care about before committing to a long build.
-# cmake writes the summary to CMakeCache.txt; grep it there so we don't have
-# to re-parse stdout after the fact.
-check_cmake_flag() {
-    local label="$1" pattern="$2" expected="$3"
-    local actual
-    actual="$(grep -i "${pattern}" CMakeCache.txt | head -1 | cut -d= -f2 | tr -d '[:space:]')"
-    if [[ "${actual^^}" != "${expected^^}" ]]; then
-        die "CMake flag check failed: ${label} - expected '${expected}', got '${actual}'"
-    fi
-    log "  OK  ${label}: ${actual}"
-}
+    -DCMAKE_INSTALL_PREFIX="${OPENCV_PREFIX}" \
+    -DCMAKE_INSTALL_LIBDIR=lib64 \
+    -DCMAKE_INSTALL_RPATH="${OPENCV_PREFIX}/lib64" \
+    "${SRC_DIR}"
 
 log "Verifying CMake configuration summary..."
 # These map to well-known CMakeCache keys; adjust if upstream renames them.
-check_cmake_flag "WITH_CUDA"    "WITH_CUDA:BOOL"    "ON"
-check_cmake_flag "WITH_FFMPEG"  "WITH_FFMPEG:BOOL"  "ON"
-check_cmake_flag "WITH_CUBLAS"  "WITH_CUBLAS:BOOL"  "ON"
-check_cmake_flag "WITH_NVCUVID" "WITH_NVCUVID:BOOL" "ON"
+for FEATURE in HAVE_CUDA HAVE_CUBLAS HAVE_NVCUVID HAVE NVCUVENC; do
+    grep -Eq "^$" cvconfig.h \
+        || die "CMake did not enable '${FEATURE}'. Check the config output above."
+    log "  OK ${FEATURE}"
+done
 
 
 
 # == Build ====================================================================
 log_header "Building (this will take a while)..."
-ninja -j"$(nproc)"
+ninja -j"$(nproc --ignore 2)"
 
 
 
