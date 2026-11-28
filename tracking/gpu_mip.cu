@@ -41,8 +41,8 @@ harrisResponseMip(float *response, cudaTextureObject_t frameTex, int width, int 
     {
         for (int j = tx; j < BLOCK_SIZE + (2 * TOTAL_HALO); j += BLOCK_SIZE)
         {
-            float gx = ((blockIdx.x * blockDim.x - TOTAL_HALO + j) + 0.5)/width;
-            float gy = ((blockIdx.y * blockDim.y - TOTAL_HALO + i) + 0.5)/height;
+            float gx = ((blockIdx.x * blockDim.x - TOTAL_HALO + j) + 0.5) / width;
+            float gy = ((blockIdx.y * blockDim.y - TOTAL_HALO + i) + 0.5) / height;
             frameShared[i][j] = (unsigned char)(tex2DLod<float>(frameTex, gx, gy, 0.0f) * 255.0f);
         }
     }
@@ -208,7 +208,7 @@ harrisThresholderMip(float3 *features, int *featureCount, float *response, float
  */
 __global__ void
 iterPyrLucasKanadeSolverMip(cudaTextureObject_t frameTex, cudaTextureObject_t prevFrameTex, float3 *features,
-                         int *featureCount, int width, int height, int levels)
+                            int *featureCount, int width, int height, int levels)
 {
     // usual per-thread registers/variables
     int tx = threadIdx.x;
@@ -264,12 +264,9 @@ iterPyrLucasKanadeSolverMip(cudaTextureObject_t frameTex, cudaTextureObject_t pr
             for (int j = tx; j < LK_WINDOW_WIDTH + (2 * SOBEL_MASK_RAD); j += LK_WINDOW_WIDTH)
             {
                 prevFrameShared[i][j] =
-                    (unsigned char)
-                    (255.0f * tex2DLod<float>(
-                        prevFrameTex,
-                        (baseX + j + 0.5f)/(width >> currPyrLevel),
-                        (baseY + i + 0.5f)/(height >> currPyrLevel),
-                        (float)currPyrLevel));
+                    (unsigned char)(255.0f * tex2DLod<float>(prevFrameTex, (baseX + j + 0.5f) / (width >> currPyrLevel),
+                                                             (baseY + i + 0.5f) / (height >> currPyrLevel),
+                                                             (float)currPyrLevel));
             }
         }
         __syncthreads();
@@ -279,12 +276,12 @@ iterPyrLucasKanadeSolverMip(cudaTextureObject_t frameTex, cudaTextureObject_t pr
         int fsX = tx + SOBEL_MASK_RAD;
 
         float dx = (-1.0f * prevFrameShared[fsY - 1][fsX - 1]) + (-2.0f * prevFrameShared[fsY][fsX - 1]) +
-                (-1.0f * prevFrameShared[fsY + 1][fsX - 1]) + (1.0f * prevFrameShared[fsY - 1][fsX + 1]) +
-                (2.0f * prevFrameShared[fsY][fsX + 1]) + (1.0f * prevFrameShared[fsY + 1][fsX + 1]);
+                   (-1.0f * prevFrameShared[fsY + 1][fsX - 1]) + (1.0f * prevFrameShared[fsY - 1][fsX + 1]) +
+                   (2.0f * prevFrameShared[fsY][fsX + 1]) + (1.0f * prevFrameShared[fsY + 1][fsX + 1]);
 
         float dy = (-1.0f * prevFrameShared[fsY - 1][fsX - 1]) + (-2.0f * prevFrameShared[fsY - 1][fsX]) +
-                (-1.0f * prevFrameShared[fsY - 1][fsX + 1]) + (1.0f * prevFrameShared[fsY + 1][fsX - 1]) +
-                (2.0f * prevFrameShared[fsY + 1][fsX]) + (1.0f * prevFrameShared[fsY + 1][fsX + 1]);
+                   (-1.0f * prevFrameShared[fsY - 1][fsX + 1]) + (1.0f * prevFrameShared[fsY + 1][fsX - 1]) +
+                   (2.0f * prevFrameShared[fsY + 1][fsX]) + (1.0f * prevFrameShared[fsY + 1][fsX + 1]);
 
         ixShared[ty][tx] = dx / 8.0f;
         iyShared[ty][tx] = dy / 8.0f;
@@ -349,11 +346,11 @@ iterPyrLucasKanadeSolverMip(cudaTextureObject_t frameTex, cudaTextureObject_t pr
         // Giant Iteration Loop
         for (int iteration = 0; iteration < LK_ITERATIONS; iteration++)
         {
-            float warpedX = (fx + u + (tx - LK_WINDOW_WIDTH_HALF) + 0.5f)/(width >> currPyrLevel);
-            float warpedY = (fy + v + (ty - LK_WINDOW_WIDTH_HALF) + 0.5f)/(height >> currPyrLevel);
+            float warpedX = (fx + u + (tx - LK_WINDOW_WIDTH_HALF) + 0.5f) / (width >> currPyrLevel);
+            float warpedY = (fy + v + (ty - LK_WINDOW_WIDTH_HALF) + 0.5f) / (height >> currPyrLevel);
 
             float it = (tex2DLod<float>(frameTex, warpedX, warpedY, (float)currPyrLevel) * 255.0f) -
-                    (float)prevFrameShared[fsY][fsX];
+                       (float)prevFrameShared[fsY][fsX];
 
             ixtShared[flatIdx] = ixShared[ty][tx] * it;
             iytShared[flatIdx] = iyShared[ty][tx] * it;
@@ -616,20 +613,20 @@ sparseLucasKanadeGPUMip(VideoInfo &video, ProgramFlags flags, bool async)
     if (async)
     {
         cudaGetMipmappedArrayLevel(&level0, deviceFrameMipMap, 0);
-        CUDA_CHECK(cudaMemcpy2DToArrayAsync(level0, 0, 0, frame.data, width * sizeof(u_char), width * sizeof(u_char), height,
-                            cudaMemcpyHostToDevice));
-                            cudaGetMipmappedArrayLevel(&level0, devicePrevFrameMipMap, 0);
-        CUDA_CHECK(cudaMemcpy2DToArrayAsync(level0, 0, 0, frame.data, width * sizeof(u_char), width * sizeof(u_char), height,
-        cudaMemcpyHostToDevice));
+        CUDA_CHECK(cudaMemcpy2DToArrayAsync(level0, 0, 0, frame.data, width * sizeof(u_char), width * sizeof(u_char),
+                                            height, cudaMemcpyHostToDevice));
+        cudaGetMipmappedArrayLevel(&level0, devicePrevFrameMipMap, 0);
+        CUDA_CHECK(cudaMemcpy2DToArrayAsync(level0, 0, 0, frame.data, width * sizeof(u_char), width * sizeof(u_char),
+                                            height, cudaMemcpyHostToDevice));
     }
     else
     {
         cudaGetMipmappedArrayLevel(&level0, deviceFrameMipMap, 0);
         CUDA_CHECK(cudaMemcpy2DToArray(level0, 0, 0, frame.data, width * sizeof(u_char), width * sizeof(u_char), height,
-                            cudaMemcpyHostToDevice));
+                                       cudaMemcpyHostToDevice));
         cudaGetMipmappedArrayLevel(&level0, devicePrevFrameMipMap, 0);
         CUDA_CHECK(cudaMemcpy2DToArray(level0, 0, 0, frame.data, width * sizeof(u_char), width * sizeof(u_char), height,
-                            cudaMemcpyHostToDevice));
+                                       cudaMemcpyHostToDevice));
     }
 
     generateMipMaps(&devicePrevFrameMipMap, &extent, levels);
@@ -736,16 +733,17 @@ sparseLucasKanadeGPUMip(VideoInfo &video, ProgramFlags flags, bool async)
 
         if (flags.correctness)
         {
-            compareGPULucasKanadeFlow(video.frames[i-1], video.frames[i], reinterpret_cast<cv::Vec3f *>(prevFrameFeatures),
-                                    reinterpret_cast<cv::Vec3f *>(frameFeatures), featureCount, flags);
+            compareGPULucasKanadeFlow(video.frames[i - 1], video.frames[i],
+                                      reinterpret_cast<cv::Vec3f *>(prevFrameFeatures),
+                                      reinterpret_cast<cv::Vec3f *>(frameFeatures), featureCount, flags);
         }
         else
         {
             cv::Mat output;
             cvtColor(video.frames[i], output, cv::COLOR_GRAY2BGR);
             drawSparseOpticalFlowGPU(output, mask, reinterpret_cast<cv::Vec3f *>(prevFrameFeatures),
-                                    reinterpret_cast<cv::Vec3f *>(frameFeatures), featureCount, pt_colors,
-                                    DRAW_CONTINUOUS_LINES);
+                                     reinterpret_cast<cv::Vec3f *>(frameFeatures), featureCount, pt_colors,
+                                     DRAW_CONTINUOUS_LINES);
             video.outputFrames.push_back(output);
         }
 

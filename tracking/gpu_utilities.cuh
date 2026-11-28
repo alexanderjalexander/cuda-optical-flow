@@ -3,14 +3,14 @@
 
 #include "lucasKanade.hpp"
 
-#define CUDA_CHECK(call) \
-    { \
-        cudaError_t err = (call); \
-        if (err != cudaSuccess) \
-        { \
-            printf("CUDA error at %s:%d — %s\n", __FILE__, __LINE__, cudaGetErrorString(err)); \
-            return; \
-        } \
+#define CUDA_CHECK(call)                                                                                               \
+    {                                                                                                                  \
+        cudaError_t err = (call);                                                                                      \
+        if (err != cudaSuccess)                                                                                        \
+        {                                                                                                              \
+            printf("CUDA error at %s:%d — %s\n", __FILE__, __LINE__, cudaGetErrorString(err));                         \
+            return;                                                                                                    \
+        }                                                                                                              \
     }
 
 /**
@@ -198,7 +198,6 @@ load2dSharedMemoryWithHalo1dBlock(T *shared, T *global, int tileSize, int halo_r
                               yGlobal);
 }
 
-
 //
 // ===================================
 //           GpuMat Versions
@@ -222,8 +221,8 @@ load2dSharedMemoryWithHalo1dBlock(T *shared, T *global, int tileSize, int halo_r
  * @param yGlobal The index of the current thread within the global memory in the Y axis.
  */
 template <typename T> __device__ void
-load2dSharedMemoryCoreGpuMat(T *shared, cv::cuda::PtrStepSz<T> global, int halo_radius, int widthGlobal, int heightGlobal, int tileSize, int tx,
-                             int ty, int xGlobal, int yGlobal)
+load2dSharedMemoryCoreGpuMat(T *shared, cv::cuda::PtrStepSz<T> global, int halo_radius, int widthGlobal,
+                             int heightGlobal, int tileSize, int tx, int ty, int xGlobal, int yGlobal)
 {
     // identify the coordinates of the output data to work on, accounting for the differences between tile size and
     // shared memory size
@@ -285,9 +284,7 @@ load2dSharedMemoryCoreGpuMat(T *shared, cv::cuda::PtrStepSz<T> global, int halo_
         {
             // top right halo corner
             shared[(ty - (tileSize - halo_radius)) * widthShared + (tx + tileSize + halo_radius)] =
-                (halo_top_row < 0 || halo_right_col >= widthGlobal)
-                    ? 0
-                    : global(halo_top_row, halo_right_col);
+                (halo_top_row < 0 || halo_right_col >= widthGlobal) ? 0 : global(halo_top_row, halo_right_col);
         }
     }
     else if (ty < halo_radius)
@@ -298,9 +295,7 @@ load2dSharedMemoryCoreGpuMat(T *shared, cv::cuda::PtrStepSz<T> global, int halo_
         {
             // bottom left halo corner
             shared[(ty + tileSize + halo_radius) * widthShared + (tx - (tileSize - halo_radius))] =
-                (halo_bottom_row >= heightGlobal || halo_left_col < 0)
-                    ? 0
-                    : global(halo_bottom_row, halo_left_col);
+                (halo_bottom_row >= heightGlobal || halo_left_col < 0) ? 0 : global(halo_bottom_row, halo_left_col);
         }
         else if (tx < halo_radius)
         {
@@ -331,7 +326,8 @@ load2dSharedMemoryCoreGpuMat(T *shared, cv::cuda::PtrStepSz<T> global, int halo_
  * @param heightGlobal The height (in elements) of the global memory data.
  */
 template <typename T> __device__ void
-load2dSharedMemoryWithHaloGpuMat(T *shared, cv::cuda::PtrStepSz<T> global, int halo_radius, int widthGlobal, int heightGlobal)
+load2dSharedMemoryWithHaloGpuMat(T *shared, cv::cuda::PtrStepSz<T> global, int halo_radius, int widthGlobal,
+                                 int heightGlobal)
 {
     // with 2D blocks, tile == block
     int tx = threadIdx.x, ty = threadIdx.y;

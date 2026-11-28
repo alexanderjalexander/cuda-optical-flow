@@ -3,10 +3,10 @@
 
 #include <opencv2/opencv.hpp>
 
+#include "frame_buffer.hpp"
+
 #include <filesystem>
 #include <vector>
-
-#include "frame_buffer.hpp"
 #define FRAME_BUFFER_SIZE 10
 
 struct VideoInfo

@@ -1,7 +1,6 @@
+#include <cuda_runtime.h>
 #include <thrust/device_ptr.h>
 #include <thrust/extrema.h>
-
-#include <cuda_runtime.h>
 
 #include "../processing/drawing.hpp"
 
@@ -130,7 +129,7 @@ harrisResponseTex(float *response, cudaTextureObject_t frameTex, int width, int 
  */
 __global__ void
 harrisThresholderTex(float3 *features, int *featureCount, float *response, float threshold, int maxFeatures, int width,
-                  int height)
+                     int height)
 {
     // define a block of shared memory large enough to hold the internal values and the halo
     int halo_radius = HARRIS_DISTANCE;
@@ -207,8 +206,8 @@ harrisThresholderTex(float3 *features, int *featureCount, float *response, float
  * @param height The image's height.
  */
 __global__ void
-iterLucasKanadeSolverTex(cudaTextureObject_t frameTex, cudaTextureObject_t prevFrameTex, float3 *features, int *featureCount, int width,
-                      int height)
+iterLucasKanadeSolverTex(cudaTextureObject_t frameTex, cudaTextureObject_t prevFrameTex, float3 *features,
+                         int *featureCount, int width, int height)
 {
     // usual per-thread registers/variables
     int tx = threadIdx.x;
@@ -257,7 +256,8 @@ iterLucasKanadeSolverTex(cudaTextureObject_t frameTex, cudaTextureObject_t prevF
     {
         for (int j = tx; j < LK_WINDOW_WIDTH + (2 * SOBEL_MASK_RAD); j += LK_WINDOW_WIDTH)
         {
-            prevFrameShared[i][j] = (unsigned char)(tex2D<float>(prevFrameTex, baseX + j + 0.5f, baseY + i + 0.5f) * 255.0f);
+            prevFrameShared[i][j] =
+                (unsigned char)(tex2D<float>(prevFrameTex, baseX + j + 0.5f, baseY + i + 0.5f) * 255.0f);
         }
     }
     __syncthreads();
@@ -494,8 +494,10 @@ sparseLucasKanadeGPUTex(VideoInfo &video, ProgramFlags flags)
 
     // === Pointer Memory Copying & Zeroing ===
 
-    cudaMemcpy2DToArray(frameArray, 0, 0, frame.data, width * sizeof(u_char), width * sizeof(u_char), height, cudaMemcpyHostToDevice);
-    cudaMemcpy2DToArray(prevFrameArray, 0, 0, frame.data, width * sizeof(u_char), width * sizeof(u_char), height, cudaMemcpyHostToDevice);
+    cudaMemcpy2DToArray(frameArray, 0, 0, frame.data, width * sizeof(u_char), width * sizeof(u_char), height,
+                        cudaMemcpyHostToDevice);
+    cudaMemcpy2DToArray(prevFrameArray, 0, 0, frame.data, width * sizeof(u_char), width * sizeof(u_char), height,
+                        cudaMemcpyHostToDevice);
 
     cudaMemset(deviceFrameFeatures, 0, MAX_FEATURES * sizeof(float3));
     cudaMemset(deviceFrameFeatureCount, 0, sizeof(int));
@@ -542,7 +544,7 @@ sparseLucasKanadeGPUTex(VideoInfo &video, ProgramFlags flags)
     float responseThreshold = responseMax * QUALITY_LEVEL;
 
     harrisThresholderTex<<<gridDim, blockDim>>>(deviceFrameFeatures, deviceFrameFeatureCount, deviceResponse,
-                                             responseThreshold, MAX_FEATURES, width, height);
+                                                responseThreshold, MAX_FEATURES, width, height);
     cudaDeviceSynchronize();
 
     // == Getting Feature Counts ==
@@ -571,7 +573,8 @@ sparseLucasKanadeGPUTex(VideoInfo &video, ProgramFlags flags)
         std::swap(frameTex, prevFrameTex);
 
         // Remake the texture objects again.
-        cudaMemcpy2DToArray(frameArray, 0, 0, frame.data, width * sizeof(u_char), width * sizeof(u_char), height, cudaMemcpyHostToDevice);
+        cudaMemcpy2DToArray(frameArray, 0, 0, frame.data, width * sizeof(u_char), width * sizeof(u_char), height,
+                            cudaMemcpyHostToDevice);
 
         cudaDestroyTextureObject(frameTex);
 
@@ -580,23 +583,24 @@ sparseLucasKanadeGPUTex(VideoInfo &video, ProgramFlags flags)
 
         // Obtain Lucas Kanade Solve on 1 dimensional grid/block array
         iterLucasKanadeSolverTex<<<featureGridDim, featureBlockDim>>>(frameTex, prevFrameTex, deviceFrameFeatures,
-                                                                   deviceFrameFeatureCount, width, height);
+                                                                      deviceFrameFeatureCount, width, height);
         cudaDeviceSynchronize();
 
         cudaMemcpy(frameFeatures, deviceFrameFeatures, featureCount * sizeof(float3), cudaMemcpyDeviceToHost);
 
         if (flags.correctness)
         {
-            compareGPULucasKanadeFlow(video.frames[i-1], video.frames[i], reinterpret_cast<cv::Vec3f *>(prevFrameFeatures),
-                                    reinterpret_cast<cv::Vec3f *>(frameFeatures), featureCount, flags);
+            compareGPULucasKanadeFlow(video.frames[i - 1], video.frames[i],
+                                      reinterpret_cast<cv::Vec3f *>(prevFrameFeatures),
+                                      reinterpret_cast<cv::Vec3f *>(frameFeatures), featureCount, flags);
         }
         else
         {
             cv::Mat output;
             cvtColor(video.frames[i], output, cv::COLOR_GRAY2BGR);
             drawSparseOpticalFlowGPU(output, mask, reinterpret_cast<cv::Vec3f *>(prevFrameFeatures),
-                                    reinterpret_cast<cv::Vec3f *>(frameFeatures), featureCount, pt_colors,
-                                    DRAW_CONTINUOUS_LINES);
+                                     reinterpret_cast<cv::Vec3f *>(frameFeatures), featureCount, pt_colors,
+                                     DRAW_CONTINUOUS_LINES);
             video.outputFrames.push_back(output);
         }
 

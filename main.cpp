@@ -80,7 +80,8 @@ usage(const char *progname)
     fprintf(stderr, "\t-c --> Verify 'Correctness' (overrides -s)\n");
     fprintf(stderr, "\t-t --> Run with Texture Memory\n");
     fprintf(stderr, "\t-m --> Run with Mipmapped Texture Memory\n");
-    fprintf(stderr, "\t-a --> Run with Asynchronous Streamed Memory Loading -- only available with Mipmapped Texture Memory\n");
+    fprintf(stderr,
+            "\t-a --> Run with Asynchronous Streamed Memory Loading -- only available with Mipmapped Texture Memory\n");
     fprintf(stderr, "*NOTE* videoName is the relative path to a file, extension included.\n");
 }
 
@@ -249,7 +250,7 @@ main(int argc, char *argv[])
             if (totalFlows > 0)
             {
                 std::cout << "Correctness -> Percentage: ";
-                printf("%8.4f\n", ((float)correctFlows/totalFlows));
+                printf("%8.4f\n", ((float)correctFlows / totalFlows));
             }
         }
         else

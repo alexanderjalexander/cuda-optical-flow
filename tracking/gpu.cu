@@ -233,8 +233,8 @@ harrisThresholder(float3 *features, int *featureCount, float *response, float th
  * @param height The image's height.
  */
 __global__ void
-iterLucasKanadeSolver(cv::cuda::PtrStepSz<unsigned char> frame, cv::cuda::PtrStepSz<unsigned char> prevFrame, float3 *features, int *featureCount, int width,
-                      int height)
+iterLucasKanadeSolver(cv::cuda::PtrStepSz<unsigned char> frame, cv::cuda::PtrStepSz<unsigned char> prevFrame,
+                      float3 *features, int *featureCount, int width, int height)
 {
     // usual per-thread registers/variables
     int tx = threadIdx.x;
@@ -279,8 +279,8 @@ iterLucasKanadeSolver(cv::cuda::PtrStepSz<unsigned char> frame, cv::cuda::PtrSte
     int pixelY = fy + ty - LK_WINDOW_WIDTH_HALF;
 
     // load the data centered around the feature into shared memory, including halos
-    load2dSharedMemoryCoreGpuMat<unsigned char>((unsigned char *)prevFrameShared, prevFrame, SOBEL_MASK_RAD, width, height,
-                                          LK_WINDOW_WIDTH, tx, ty, pixelX, pixelY);
+    load2dSharedMemoryCoreGpuMat<unsigned char>((unsigned char *)prevFrameShared, prevFrame, SOBEL_MASK_RAD, width,
+                                                height, LK_WINDOW_WIDTH, tx, ty, pixelX, pixelY);
     __syncthreads();
 
     // Load with bounds checking - clamp to zero if out of bounds
@@ -577,7 +577,10 @@ sparseLucasKanadeGPU(VideoInfo &video, ProgramFlags flags)
         framePair = video.frames.next();
         std::swap(cpuPrevFrame, cpuFrame);
         cpuFrame = framePair.second;
-        if (cpuFrame.empty()) break;
+        if (cpuFrame.empty())
+        {
+            break;
+        }
 
         // Switch Frames using pointer swapping
         // unsigned char *temp = devicePrevFrame;
@@ -600,15 +603,15 @@ sparseLucasKanadeGPU(VideoInfo &video, ProgramFlags flags)
         if (flags.correctness)
         {
             compareGPULucasKanadeFlow(cpuPrevFrame, cpuFrame, reinterpret_cast<cv::Vec3f *>(prevFrameFeatures),
-                                    reinterpret_cast<cv::Vec3f *>(frameFeatures), featureCount, flags);
+                                      reinterpret_cast<cv::Vec3f *>(frameFeatures), featureCount, flags);
         }
         else
         {
             cv::Mat output;
             cvtColor(cpuFrame, output, cv::COLOR_GRAY2BGR); // todo (maxgreen01) could probably be done on GPU too
             drawSparseOpticalFlowGPU(output, mask, reinterpret_cast<cv::Vec3f *>(prevFrameFeatures),
-                                    reinterpret_cast<cv::Vec3f *>(frameFeatures), featureCount, pt_colors,
-                                    DRAW_CONTINUOUS_LINES);
+                                     reinterpret_cast<cv::Vec3f *>(frameFeatures), featureCount, pt_colors,
+                                     DRAW_CONTINUOUS_LINES);
             video.outputFrames.push_back(output);
         }
 

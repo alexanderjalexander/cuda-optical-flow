@@ -1,6 +1,7 @@
 #ifndef LUCAS_KANADE_H
 #define LUCAS_KANADE_H
 
+#include <opencv2/features.hpp>
 #include <opencv2/opencv.hpp>
 
 #include "../flags.hpp"
@@ -31,7 +32,7 @@
 #define LK_ITERATIONS 10
 
 void compareGPULucasKanadeFlow(cv::Mat oldFrame, cv::Mat frame, cv::Vec3f *oldPoints, cv::Vec3f *points,
-                                 int featureCount, ProgramFlags flags);
+                               int featureCount, ProgramFlags flags);
 
 void sparseLucasKanadeCPU(VideoInfo &video, ProgramFlags flags);
 

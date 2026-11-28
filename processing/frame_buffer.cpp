@@ -1,4 +1,5 @@
 #include "frame_buffer.hpp"
+
 #include "opencv2/core/cuda.hpp"
 #include "opencv2/core/mat.hpp"
 
@@ -9,7 +10,8 @@
 // Start at 1, so that we don't accidentally overwrite data being processed on the GPU.
 #define FRONT_START 1
 
-int FrameBuffer::initialize(std::unique_ptr<cv::VideoCapture> &source, size_t _capacity, bool _useStreams)
+int
+FrameBuffer::initialize(std::unique_ptr<cv::VideoCapture> &source, size_t _capacity, bool _useStreams)
 {
     if (_capacity == 0)
     {
@@ -51,20 +53,23 @@ int FrameBuffer::initialize(std::unique_ptr<cv::VideoCapture> &source, size_t _c
     return EXIT_SUCCESS;
 }
 
-bool FrameBuffer::empty() const
+bool
+FrameBuffer::empty() const
 {
     return size == 0;
 }
 
-bool FrameBuffer::full() const
+bool
+FrameBuffer::full() const
 {
     return size == capacity;
 }
 
-// Return the next frame from the front of the buffer, and load the next frame from the source video into the back of the buffer.
-// Return return a pair containing the GpuMat and corresponding Mat, or return empty for either type depending on the values of `ignoreGpu` and `ignoreCpu`.
-// If the buffer is empty, return a pair of empty data.
-std::pair<cv::cuda::GpuMat, cv::Mat> FrameBuffer::next(bool ignoreGpu, bool ignoreCpu)
+// Return the next frame from the front of the buffer, and load the next frame from the source video into the back of
+// the buffer. Return return a pair containing the GpuMat and corresponding Mat, or return empty for either type
+// depending on the values of `ignoreGpu` and `ignoreCpu`. If the buffer is empty, return a pair of empty data.
+std::pair<cv::cuda::GpuMat, cv::Mat>
+FrameBuffer::next(bool ignoreGpu, bool ignoreCpu)
 {
     if (empty())
     {
@@ -91,7 +96,8 @@ std::pair<cv::cuda::GpuMat, cv::Mat> FrameBuffer::next(bool ignoreGpu, bool igno
     return std::make_pair(gpuFrame, cpuFrame);
 }
 
-int FrameBuffer::loadFrame()
+int
+FrameBuffer::loadFrame()
 {
     if (!frames || !cpuFrames)
     {
@@ -137,7 +143,8 @@ int FrameBuffer::loadFrame()
     return EXIT_SUCCESS;
 }
 
-int FrameBuffer::release()
+int
+FrameBuffer::release()
 {
     delete[] frames;
     frames = nullptr;
@@ -156,7 +163,8 @@ int FrameBuffer::release()
     return EXIT_SUCCESS;
 }
 
-void FrameBuffer::resetCapture()
+void
+FrameBuffer::resetCapture()
 {
     if (source && source->isOpened())
     {

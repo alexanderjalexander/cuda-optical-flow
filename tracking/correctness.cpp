@@ -15,13 +15,14 @@ uint64 pointBadFlows = 0;
 
 void
 compareGPULucasKanadeFlow(cv::Mat oldFrame, cv::Mat frame, cv::Vec3f *oldPoints, cv::Vec3f *points, int featureCount,
-                            ProgramFlags flags)
+                          ProgramFlags flags)
 {
     std::vector<cv::Point2f> p0_cpu, p1_cpu;
     std::vector<int> idxMap;
     std::vector<uchar> status;
     std::vector<float> err;
-    cv::TermCriteria criteria = cv::TermCriteria((cv::TermCriteria::COUNT) + (cv::TermCriteria::EPS), LK_ITERATIONS, LK_EPSILON);
+    cv::TermCriteria criteria =
+        cv::TermCriteria((cv::TermCriteria::COUNT) + (cv::TermCriteria::EPS), LK_ITERATIONS, LK_EPSILON);
 
     for (int i = 0; i < featureCount; i++)
     {
