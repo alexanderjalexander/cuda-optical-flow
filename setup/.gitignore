@@ -1,3 +1,6 @@
 opencv/
+opencv-*/
 opencv_contrib/
+opencv_contrib-*/
 opencv_build/
+opencv_build-*/
